@@ -2,6 +2,9 @@ mod event;
 mod queue;
 mod scanner;
 
+#[cfg(test)]
+mod tests;
+
 pub use event::FileEvent;
 pub use queue::{EventQueue, EventHandler, DebouncedHandler, QueueConfig};
 pub use scanner::{DirectoryScanner, ScanResult, ScanConfig};

@@ -26,6 +26,10 @@ parking_lot = "0.12"
 dirs = "5"
 async-trait = "0.1"
 
+[dev-dependencies]
+mockall = "0.12"
+serial_test = "3.0"
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
