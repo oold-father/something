@@ -6,7 +6,10 @@
       "Bash(git remote:*)",
       "Bash(git push:*)",
       "Bash(git config:*)",
-      "Bash(cargo test:*)"
+      "Bash(cargo test:*)",
+      "Bash(npm install:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run:*)"
     ]
   }
 }
