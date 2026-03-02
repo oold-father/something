@@ -1,5 +1,5 @@
 use crate::db::{Database, File, FileType, FileStatus, SystemStats};
-use crate::error::Result;
+use crate::error::AppError;
 use std::path::Path;
 
 /// 获取文件列表
@@ -58,19 +58,19 @@ pub fn add_file(
 
     let created_at = metadata.created()
         .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .and_then(|t: std::time::SystemTime| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| chrono::DateTime::from_timestamp(d.as_secs() as i64, 0).unwrap())
         .unwrap_or_else(chrono::Utc::now);
 
     let modified_at = metadata.modified()
         .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .and_then(|t: std::time::SystemTime| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| chrono::DateTime::from_timestamp(d.as_secs() as i64, 0).unwrap())
         .unwrap_or_else(chrono::Utc::now);
 
     let accessed_at = metadata.accessed()
         .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .and_then(|t: std::time::SystemTime| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| chrono::DateTime::from_timestamp(d.as_secs() as i64, 0).unwrap())
         .unwrap_or_else(chrono::Utc::now);
 
@@ -79,7 +79,7 @@ pub fn add_file(
         path,
         name,
         extension,
-        size: metadata.len(),
+        size: metadata.len() as i64,
         file_type,
         created_at,
         modified_at,

@@ -1,5 +1,5 @@
-use crate::db::{Database, Tag, CreateTagRequest, TagType, FileStatus};
-use crate::error::Result;
+use crate::db::{Database, Tag, CreateTagRequest, TagType};
+use crate::error::AppError;
 
 /// 获取所有标签
 #[tauri::command]
@@ -85,7 +85,8 @@ pub fn delete_tag(
 
     let conn = state.conn.lock();
     conn.execute("DELETE FROM tags WHERE id = ?1", params![tag_id])
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// 更新标签
@@ -102,5 +103,6 @@ pub fn update_tag(
     conn.execute(
         "UPDATE tags SET display_name = ?1, color = ?2 WHERE id = ?3",
         params![display_name, color, tag_id],
-    ).map_err(|e| e.to_string())
+        ).map_err(|e| e.to_string())?;
+    Ok(())
 }

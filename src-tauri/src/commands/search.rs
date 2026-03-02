@@ -1,5 +1,5 @@
 use crate::db::{Database, SearchQuery, SearchOperator, FileType};
-use crate::error::Result;
+use crate::error::AppError;
 
 /// 搜索文件
 #[tauri::command]

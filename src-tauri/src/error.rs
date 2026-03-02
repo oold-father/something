@@ -1,39 +1,64 @@
-use thiserror::Error;
+use std::fmt;
 
 /// 应用错误类型
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum AppError {
-    #[error("数据库错误: {0}")]
-    Database(#[from] rusqlite::Error),
-
-    #[error("IO 错误: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("文件不存在: {0}")]
+    Database(rusqlite::Error),
+    Io(std::io::Error),
+    Notify(notify::Error),
     FileNotFound(String),
-
-    #[error("标签不存在: {0}")]
     TagNotFound(String),
-
-    #[error("目录已监控: {0}")]
     AlreadyWatched(String),
-
-    #[error("权限不足: {0}")]
     PermissionDenied(String),
-
-    #[error("未找到配置: {0}")]
     ConfigNotFound(String),
-
-    #[error("未知错误: {0}")]
     Unknown(String),
+}
+
+impl std::fmt::Display for AppError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AppError::Database(e) => write!(f, "数据库错误: {}", e),
+            AppError::Io(e) => write!(f, "IO 错误: {}", e),
+            AppError::Notify(e) => write!(f, "文件监控错误: {}", e),
+            AppError::FileNotFound(s) => write!(f, "文件不存在: {}", s),
+            AppError::TagNotFound(s) => write!(f, "标签不存在: {}", s),
+            AppError::AlreadyWatched(s) => write!(f, "目录已监控: {}", s),
+            AppError::PermissionDenied(s) => write!(f, "权限不足: {}", s),
+            AppError::ConfigNotFound(s) => write!(f, "未找到配置: {}", s),
+            AppError::Unknown(s) => write!(f, "未知错误: {}", s),
+        }
+    }
 }
 
 /// 结果类型别名
 pub type Result<T> = std::result::Result<T, AppError>;
 
-/// 将错误转换为字符串，用于 Tauri 命令
-impl From<AppError> for String {
-    fn from(error: AppError) -> Self {
-        error.to_string()
+impl std::error::Error for AppError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            AppError::Database(e) => Some(e),
+            AppError::Io(e) => Some(e),
+            AppError::Notify(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+// 手动实现 From 转换
+impl From<rusqlite::Error> for AppError {
+    fn from(error: rusqlite::Error) -> Self {
+        AppError::Database(error)
+    }
+}
+
+impl From<std::io::Error> for AppError {
+    fn from(error: std::io::Error) -> Self {
+        AppError::Io(error)
+    }
+}
+
+impl From<notify::Error> for AppError {
+    fn from(error: notify::Error) -> Self {
+        AppError::Notify(error)
     }
 }

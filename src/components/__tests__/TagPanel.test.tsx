@@ -5,8 +5,8 @@ describe('TagPanel', () => {
     vi.clearAllMocks();
   });
 
-  it('组件文件存在', () => {
-    const TagPanel = require('../TagPanel').default;
+  it('组件文件存在', async () => {
+    const { default: TagPanel } = await import('../TagPanel');
     expect(typeof TagPanel).toBe('function');
   });
 });

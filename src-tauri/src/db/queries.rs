@@ -1,8 +1,8 @@
 use super::models::*;
 use super::Database;
+use crate::error::Result;
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection};
-use std::path::PathBuf;
+use rusqlite::{params, OptionalExtension};
 
 impl Database {
     /// 创建文件
@@ -103,15 +103,17 @@ impl Database {
 
         let mut stmt = conn.prepare(sql)?;
 
-        let rows = if limit.is_some() || offset.is_some() {
-            stmt.query(params![limit.unwrap_or(100), offset.unwrap_or(0)])?
-        } else {
-            stmt.query(params![])?
-        };
-
         let mut files = Vec::new();
-        for row in rows {
-            files.push(self.row_to_file(row)?);
+        if limit.is_some() || offset.is_some() {
+            let mut rows = stmt.query(params![limit.unwrap_or(100), offset.unwrap_or(0)])?;
+            while let Some(row) = rows.next()? {
+                files.push(self.row_to_file(row)?);
+            }
+        } else {
+            let mut rows = stmt.query(params![])?;
+            while let Some(row) = rows.next()? {
+                files.push(self.row_to_file(row)?);
+            }
         }
 
         Ok(files)
@@ -162,7 +164,8 @@ impl Database {
         )?;
 
         let mut tags = Vec::new();
-        for row in stmt.query([])? {
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
             tags.push(self.row_to_tag(row)?);
         }
 
@@ -200,7 +203,8 @@ impl Database {
         )?;
 
         let mut tags = Vec::new();
-        for row in stmt.query(params![file_id])? {
+        let mut rows = stmt.query(params![file_id])?;
+        while let Some(row) = rows.next()? {
             tags.push(self.row_to_tag(row)?);
         }
 
@@ -279,7 +283,7 @@ impl Database {
 
     /// 批量添加标签到文件
     pub fn batch_add_tags(&self, file_ids: &[i64], tag_names: &[String]) -> Result<()> {
-        let conn = self.conn.lock();
+        let mut conn = self.conn.lock();
 
         let tx = conn.transaction()?;
 
@@ -288,7 +292,7 @@ impl Database {
                 if let Some(tag) = tx.query_row(
                     "SELECT id FROM tags WHERE name = ?1",
                     params![tag_name],
-                    |row| row.get(0),
+                    |row| row.get::<_, i64>(0),
                 ).optional()? {
                     let now = Utc::now().timestamp();
                     tx.execute(
@@ -327,13 +331,12 @@ impl Database {
 
         let mut stmt = conn.prepare(&sql)?;
 
-        let params: Vec<&rusqlite::types::Value> = tag_names
-            .iter()
-            .map(|n| rusqlite::types::Value::from(n.as_str()))
-            .collect();
+        // 使用 rusqlite 的 params_from_iter
+        let params: Vec<&dyn rusqlite::ToSql> = tag_names.iter().map(|n| n as &dyn rusqlite::ToSql).collect();
 
         let mut files = Vec::new();
-        for row in stmt.query(params.as_slice())? {
+        let mut rows = stmt.query(params.as_slice())?;
+        while let Some(row) = rows.next()? {
             files.push(self.row_to_file(row)?);
         }
 
@@ -373,9 +376,10 @@ impl Database {
         )?;
 
         let mut dirs = Vec::new();
-        for row in stmt.query([])? {
-            let filters: Option<String> = row.get(3)?;
-            let filters = filters.and_then(|f| serde_json::from_str(&f).ok());
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let filters_raw: Option<String> = row.get(3)?;
+            let filters: Option<serde_json::Value> = filters_raw.and_then(|f| serde_json::from_str(&f).ok());
 
             dirs.push(WatchedDirectory {
                 id: Some(row.get(0)?),
@@ -494,7 +498,20 @@ impl Database {
                      JOIN file_tags ft ON t.id = ft.tag_id
                      WHERE ft.file_id = ?1",
                     params![id],
-                    |row| self.row_to_tag(row),
+                    |row| {
+                        let tag_type_str: String = row.get(3)?;
+                        let tag_type = TagType::from_str(&tag_type_str);
+                        Ok(Tag {
+                            id: Some(row.get(0)?),
+                            name: row.get(1)?,
+                            display_name: row.get(2)?,
+                            tag_type,
+                            color: row.get(4)?,
+                            icon: row.get(5)?,
+                            use_count: row.get(6)?,
+                            created_at: DateTime::from_timestamp(row.get(7)?, 0).unwrap(),
+                        })
+                    },
                 ).optional()?
             } else {
                 None

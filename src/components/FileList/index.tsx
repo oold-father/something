@@ -63,14 +63,14 @@ export default function FileList() {
   const handleFileClick = async (file: FileType) => {
     try {
       // 使用 Tauri 的 shell API 打开文件
-      const { open } = await import('@tauri-apps/plugin-opener');
+      const { open } = await import('@tauri-apps/plugin-opener') as any;
       open(file.path);
     } catch (error) {
       console.error('打开文件失败:', error);
     }
   };
 
-  const displayFiles = searchResults?.results?.length > 0
+  const displayFiles = (searchResults?.results && searchResults.results.length > 0)
     ? searchResults.results.map((r) => ({ ...r.file, tags: r.tags }))
     : files;
 

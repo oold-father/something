@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import SearchBar from './components/SearchBar';
 import TagPanel from './components/TagPanel';
 import FileList from './components/FileList';

@@ -20,7 +20,7 @@
         "resizable": true,
         "fullscreen": false,
         "hiddenTitle": false,
-        "titleBarStyle": "Default"
+        "titleBarStyle": "Visible"
       }
     ],
     "security": {

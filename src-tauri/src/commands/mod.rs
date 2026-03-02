@@ -1,12 +1,12 @@
 mod tag;
 mod search;
 mod file;
-mod watcher;
+// mod watcher; // 暂时注释掉 watcher 模块
 
 pub use tag::*;
 pub use search::*;
 pub use file::*;
-pub use watcher::*;
+// pub use watcher::*;
 
 use crate::db::Database;
 use tauri::Manager;
@@ -42,11 +42,11 @@ pub fn register_commands(db: Database) {
             delete_file,
             get_stats,
 
-            // 监控目录相关
-            get_watched_directories,
-            add_watched_directory,
-            remove_watched_directory,
-            update_watched_directory,
-            scan_directory,
+            // 监控目录相关 - 暂时注释
+            // get_watched_directories,
+            // add_watched_directory,
+            // remove_watched_directory,
+            // update_watched_directory,
+            // scan_directory,
         ]);
 }

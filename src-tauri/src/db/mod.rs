@@ -37,11 +37,11 @@ impl Database {
         // 打开数据库连接
         let conn = Connection::open(&db_path)?;
 
-        // 执行表结构初始化
-        conn.execute_batch(SCHEMA_SQL)?;
+        // 启用 WAL 模式以提高并发性能（在 execute_batch 之前）
+        let _ = conn.execute("PRAGMA journal_mode = WAL;", []);
 
-        // 启用 WAL 模式以提高并发性能
-        conn.execute("PRAGMA journal_mode = WAL;", [])?;
+        // 使用 execute_batch 执行所有 SQL 语句
+        conn.execute_batch(SCHEMA_SQL)?;
 
         Ok(Database {
             conn: Mutex::new(conn),
@@ -78,16 +78,16 @@ impl Database {
 
     /// 初始化默认标签
     pub fn init_default_tags(&self) -> Result<()> {
-        let default_tags = vec![
+        let tag_list: Vec<(&str, &str)> = vec![
             ("图片", "#F59E0B"),
             ("音频", "#10B981"),
             ("视频", "#EF4444"),
-            ("文本", "#6366F1"),
+            ("文档", "#6366F1"),
             ("今日文件", "#8B5CF6"),
             ("本周文件", "#EC4899"),
-        );
+        ];
 
-        for (name, color) in default_tags {
+        for (name, color) in tag_list {
             // 检查标签是否已存在
             if self.get_tag_by_name(name)?.is_none() {
                 let tag = Tag {
