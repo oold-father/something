@@ -1,19 +1,26 @@
 import { useEffect, useState } from 'react';
+import { Settings, Sun, Moon } from 'lucide-react';
 import SearchBar from './components/SearchBar';
 import TagPanel from './components/TagPanel';
 import WatchedDirectories from './components/WatchedDirectories';
 import FileList from './components/FileList';
+import Toast from './components/Toast';
+import SettingsPanel from './components/SettingsPanel';
 import { useStore } from './stores/useStore';
 import { api } from './lib/api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'tags' | 'directories'>('tags');
+  const [showSettings, setShowSettings] = useState(false);
   const searchKeywords = useStore((s) => s.searchKeywords);
   const searchOperator = useStore((s) => s.searchOperator);
   const setSearchResults = useStore((s) => s.setSearchResults);
   const setIsLoading = useStore((s) => s.setIsLoading);
   const setStats = useStore((s) => s.setStats);
   const setWatchedDirectories = useStore((s) => s.setWatchedDirectories);
+  const updateSettings = useStore((s) => s.updateSettings);
+  const theme = useStore((s) => s.theme);
+  const setTheme = useStore((s) => s.setTheme);
 
   useEffect(() => {
     loadInitialData();
@@ -57,6 +64,10 @@ export default function App() {
     }
   };
 
+  const toggleTheme = () => {
+    setTheme(theme === 'dark' ? 'light' : 'dark');
+  };
+
   return (
     <div className="flex h-screen bg-background text-foreground">
       {/* 左侧面板 */}
@@ -94,8 +105,26 @@ export default function App() {
       {/* 右侧主内容区 */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* 顶部搜索栏 */}
-        <div className="p-4 border-b border-border">
-          <SearchBar />
+        <div className="p-4 border-b border-border flex items-center gap-4">
+          <div className="flex-1">
+            <SearchBar />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={toggleTheme}
+              className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+              title={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
+            >
+              {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+              title="设置"
+            >
+              <Settings size={20} />
+            </button>
+          </div>
         </div>
 
         {/* 文件列表 */}
@@ -103,6 +132,16 @@ export default function App() {
           <FileList />
         </div>
       </div>
+
+      {/* Toast 通知 */}
+      <Toast />
+
+      {/* 设置面板 */}
+      <SettingsPanel
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        onSave={updateSettings}
+      />
     </div>
   );
 }

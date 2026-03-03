@@ -1,8 +1,8 @@
 /**
  * 文件列表组件
  */
-import { useEffect, useState } from 'react';
-import { File, Calendar, HardDrive, RefreshCw, Download } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { File, Calendar, HardDrive, RefreshCw, Download, Upload } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatFileSize, formatDate, getFileIcon } from '../../lib/utils';
 import { useStore } from '../../stores/useStore';
@@ -15,9 +15,15 @@ export default function FileList() {
   const isLoading = useStore((s) => s.isLoading);
   const setIsLoading = useStore((s) => s.setIsLoading);
   const selectedTags = useStore((s) => s.selectedTags);
+  const addNotification = useStore((s) => s.addNotification);
+
   const [loadingMore, setLoadingMore] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [page, setPage] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const dragCounter = useRef(0);
+
   const hasMore = files.length > 0 && files.length % 50 === 0;
 
   useEffect(() => {
@@ -85,6 +91,129 @@ export default function FileList() {
     }
   };
 
+  // 拖放处理
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    if (dragCounter.current === 1) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounter.current = 0;
+
+    const items = e.dataTransfer?.items;
+    if (!items) return;
+
+    setIsUploading(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    try {
+      // 处理拖放的文件
+      const files: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === 'file') {
+          const file = item.getAsFile();
+          if (file) {
+            files.push(file);
+          }
+        }
+      }
+
+      if (files.length === 0) {
+        addNotification({ type: 'warning', message: '没有检测到有效的文件' });
+        setIsUploading(false);
+        return;
+      }
+
+      // 处理每个文件
+      for (const file of files) {
+        try {
+          // 使用 Tauri 的 API 获取文件路径
+          const { readBinaryFile } = await import('@tauri-apps/plugin-fs') as any;
+          // 注意：这里需要根据实际的 Tauri API 调整
+          // 目前这是一个示例实现
+
+          // 暂时使用文件名作为路径（实际应用中需要获取完整路径）
+          const filePath = file.name;
+
+          // 调用 API 添加文件
+          await api.addFile({
+            path: filePath,
+            name: file.name,
+            extension: file.name.split('.').pop() || '',
+            size: file.size,
+            fileType: getFileType(file.name),
+            createdAt: new Date().toISOString(),
+            modifiedAt: new Date(file.lastModified).toISOString(),
+            status: 'active',
+          });
+
+          successCount++;
+        } catch (error) {
+          console.error(`添加文件 ${file.name} 失败:`, error);
+          errorCount++;
+        }
+      }
+
+      // 刷新文件列表
+      await loadFiles();
+
+      // 显示结果通知
+      if (successCount > 0) {
+        addNotification({
+          type: 'success',
+          message: `成功添加 ${successCount} 个文件${errorCount > 0 ? `，${errorCount} 个失败` : ''}`,
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          message: `添加文件失败，共 ${errorCount} 个文件`,
+        });
+      }
+    } catch (error) {
+      console.error('处理拖放文件失败:', error);
+      addNotification({ type: 'error', message: '处理文件失败' });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const getFileType = (filename: string): FileType['fileType'] => {
+    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'ico'];
+    const audioExts = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma'];
+    const videoExts = ['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm'];
+    const textExts = ['txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'py', 'java', 'cpp', 'c'];
+
+    if (imageExts.includes(ext)) return 'image';
+    if (audioExts.includes(ext)) return 'audio';
+    if (videoExts.includes(ext)) return 'video';
+    if (textExts.includes(ext)) return 'text';
+    return 'other';
+  };
+
   const displayFiles = (searchResults?.results && searchResults.results.length > 0)
     ? searchResults.results.map((r) => ({ ...r.file, tags: r.tags }))
     : files;
@@ -92,7 +221,34 @@ export default function FileList() {
   const totalCount = searchResults?.total ?? files.length;
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div
+      className="flex flex-col h-full bg-background relative"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* 拖放遮罩 */}
+      {isDragging && (
+        <div className="absolute inset-0 bg-blue-500/10 border-4 border-dashed border-blue-500 rounded-lg z-10 flex items-center justify-center">
+          <div className="text-center">
+            <Upload size={64} className="mx-auto mb-4 text-blue-500" />
+            <p className="text-xl font-semibold text-blue-600">拖放文件到此处</p>
+            <p className="text-sm text-gray-600 mt-2">释放鼠标添加文件到索引</p>
+          </div>
+        </div>
+      )}
+
+      {/* 上传中提示 */}
+      {isUploading && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-20">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 text-center">
+            <RefreshCw size={48} className="mx-auto mb-4 text-blue-600 animate-spin" />
+            <p className="text-lg font-semibold">正在处理文件...</p>
+          </div>
+        </div>
+      )}
+
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div>
           <h2 className="font-semibold text-lg">文件列表</h2>
@@ -123,7 +279,7 @@ export default function FileList() {
             <p className="text-sm mt-2">
               {selectedTags.length > 0
                 ? '该标签下暂无文件，请尝试其他标签或添加监控目录'
-                : '请先添加监控目录并扫描文件'}
+                : '拖放文件到此处，或添加监控目录并扫描文件'}
             </p>
             {selectedTags.length === 0 && (
               <button

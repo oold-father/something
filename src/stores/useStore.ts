@@ -4,6 +4,26 @@
 import { create } from 'zustand';
 import type { File, Tag, SearchResultResponse, SystemStats, WatchedDirectory } from '../types/api';
 
+export interface Notification {
+  id: string;
+  type: 'success' | 'error' | 'warning' | 'info';
+  message: string;
+  duration?: number; // 自动消失时间（毫秒），0 表示不自动消失
+  timestamp: number;
+}
+
+export interface AppSettings {
+  theme: 'light' | 'dark' | 'auto';
+  accentColor: string;
+  defaultSearchOperator: 'AND' | 'OR';
+  searchResultLimit: number;
+  autoScanInterval: number;
+  showScanNotifications: boolean;
+  showHiddenFiles: boolean;
+}
+
+interface AppState {
+
 interface AppState {
   // 文件列表
   files: File[];
@@ -41,9 +61,24 @@ interface AppState {
   // 是否正在加载
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
+
+  // 通知消息
+  notifications: Notification[];
+  addNotification: (notification: Omit<Notification, 'id' | 'timestamp'>) => void;
+  removeNotification: (id: string) => void;
+
+  // 应用设置
+  settings: AppSettings;
+  updateSettings: (settings: Partial<AppSettings>) => void;
+
+  // 主题
+  theme: 'light' | 'dark';
+  setTheme: (theme: 'light' | 'dark') => void;
 }
 
-export const useStore = create<AppState>((set) => ({
+export const useStore = create<AppState>((set, get) => ({
+  files: [],
+  setFiles: (files) => set({ files }),
   files: [],
   setFiles: (files) => set({ files }),
 
@@ -79,4 +114,67 @@ export const useStore = create<AppState>((set) => ({
 
   isLoading: false,
   setIsLoading: (loading) => set({ isLoading: loading }),
+
+  notifications: [],
+  addNotification: (notification) => {
+    const id = Math.random().toString(36).substr(2, 9);
+    const newNotification: Notification = {
+      id,
+      timestamp: Date.now(),
+      ...notification,
+    };
+    set((state) => ({
+      notifications: [...state.notifications, newNotification],
+    }));
+
+    // 自动消失
+    if (notification.duration !== 0) {
+      setTimeout(() => {
+        useStore.getState().removeNotification(id);
+      }, notification.duration || 3000);
+    }
+  },
+  removeNotification: (id) =>
+    set((state) => ({
+      notifications: state.notifications.filter((n) => n.id !== id),
+    })),
+
+  settings: {
+    theme: 'auto',
+    accentColor: '#3b82f6',
+    defaultSearchOperator: 'AND',
+    searchResultLimit: 50,
+    autoScanInterval: 30,
+    showScanNotifications: true,
+    showHiddenFiles: false,
+  },
+  updateSettings: (newSettings) =>
+    set((state) => ({
+      settings: { ...state.settings, ...newSettings },
+    })),
+
+  theme: 'light',
+  setTheme: (theme) => {
+    set({ theme });
+    // 更新 HTML class
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    // 保存到 localStorage
+    localStorage.setItem('something_theme', theme);
+  },
 }));
+
+// 初始化主题
+if (typeof window !== 'undefined') {
+  const savedTheme = localStorage.getItem('something_theme') as 'light' | 'dark' | null;
+  if (savedTheme) {
+    useStore.getState().setTheme(savedTheme);
+  } else {
+    // 检测系统主题偏好
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    useStore.getState().setTheme(prefersDark ? 'dark' : 'light');
+  }
+}
