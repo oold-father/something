@@ -1,4 +1,4 @@
-# 文件标签管理系统
+# something
 
 一个高效的系统级文件标签管理工具，通过自动标签生成和自定义标签相结合的方式，让用户无需浏览文件内容即可快速定位文件。
 
@@ -31,7 +31,7 @@
 ## 项目结构
 
 ```
-file-tag-manager/
+something/
 ├── src/                       # React 前端
 │   ├── components/            # UI 组件
 │   │   ├── SearchBar/        # 搜索栏
@@ -128,9 +128,9 @@ npm run tauri:build
 
 | 操作系统 | 路径 |
 |---------|------|
-| Windows | `%APPDATA%\file-tag-manager\` |
-| macOS | `~/Library/Application Support/file-tag-manager/` |
-| Linux | `~/.config/file-tag-manager/` |
+| Windows | `%APPDATA%\something\` |
+| macOS | `~/Library/Application Support/something/` |
+| Linux | `~/.config/something/` |
 
 ## 性能指标
 

@@ -1,5 +1,5 @@
 use crate::db::{File, FileType};
-use chrono::{Datelike, Timelike, Utc};
+use chrono::{Datelike, Utc};
 
 /// 标签规则定义
 #[derive(Debug, Clone)]
@@ -21,9 +21,11 @@ pub enum TagCondition {
     DatePattern(DatePattern),
     /// 路径包含指定字符串
     PathContains(String),
-    /// 扩展名匹配
+    /// 扩展名匹配（预留功能）
+    #[allow(dead_code)]
     Extension(Vec<String>),
-    /// 文件名包含指定字符串
+    /// 文件名包含指定字符串（预留功能）
+    #[allow(dead_code)]
     NameContains(String),
 }
 
@@ -33,18 +35,23 @@ pub enum DatePattern {
     /// 今天
     Today,
     /// 昨天
+    #[allow(dead_code)]
     Yesterday,
     /// 本周
     ThisWeek,
     /// 上周
+    #[allow(dead_code)]
     LastWeek,
     /// 本月
     ThisMonth,
     /// 上月
+    #[allow(dead_code)]
     LastMonth,
     /// 本年
+    #[allow(dead_code)]
     ThisYear,
     /// 去年
+    #[allow(dead_code)]
     LastYear,
 }
 
@@ -56,9 +63,9 @@ impl TagRule {
             TagCondition::FileSize { min, max } => {
                 let size = file.size as u64;
                 match (min, max) {
-                    (Some(m), None) => size >= m,
-                    (None, Some(m)) => size <= m,
-                    (Some(min_val), Some(max_val)) => size >= min_val && size <= max_val,
+                    (Some(m), None) => size >= *m,
+                    (None, Some(m)) => size <= *m,
+                    (Some(min_val), Some(max_val)) => size >= *min_val && size <= *max_val,
                     (None, None) => true,
                 }
             }
@@ -84,11 +91,11 @@ impl TagRule {
 
         match pattern {
             DatePattern::Today => {
-                file_date.date() == now.date()
+                file_date.date_naive() == now.date_naive()
             }
             DatePattern::Yesterday => {
                 let yesterday = now - chrono::Duration::days(1);
-                file_date.date() == yesterday.date()
+                file_date.date_naive() == yesterday.date_naive()
             }
             DatePattern::ThisWeek => {
                 let week_start = now - chrono::Duration::days(now.weekday().num_days_from_monday() as i64);

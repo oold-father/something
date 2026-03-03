@@ -1,16 +1,19 @@
-use std::fmt;
-
 /// 应用错误类型
 #[derive(Debug)]
 pub enum AppError {
     Database(rusqlite::Error),
     Io(std::io::Error),
     Notify(notify::Error),
+    #[allow(dead_code)]
     FileNotFound(String),
+    #[allow(dead_code)]
     TagNotFound(String),
+    #[allow(dead_code)]
     AlreadyWatched(String),
+    #[allow(dead_code)]
     PermissionDenied(String),
     ConfigNotFound(String),
+    #[allow(dead_code)]
     Unknown(String),
 }
 

@@ -1,18 +1,18 @@
 mod tag;
 mod search;
 mod file;
-// mod watcher; // 暂时注释掉 watcher 模块
+mod directory_watcher;
 
 pub use tag::*;
 pub use search::*;
 pub use file::*;
-// pub use watcher::*;
+pub use directory_watcher::*;
 
 use crate::db::Database;
 use tauri::Manager;
 
 /// 注册所有 Tauri 命令
-pub fn register_commands(db: Database) {
+pub fn register_commands(db: Database) -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
         .setup(move |app| {
             // 将数据库实例存储到 app state 中
@@ -42,11 +42,12 @@ pub fn register_commands(db: Database) {
             delete_file,
             get_stats,
 
-            // 监控目录相关 - 暂时注释
-            // get_watched_directories,
-            // add_watched_directory,
-            // remove_watched_directory,
-            // update_watched_directory,
-            // scan_directory,
-        ]);
+            // 监控目录相关
+            get_watched_directories,
+            add_watched_directory,
+            remove_watched_directory,
+            update_watched_directory,
+            scan_directory,
+            scan_all_directories,
+        ])
 }

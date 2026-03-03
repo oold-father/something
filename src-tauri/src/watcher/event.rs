@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-/// 文件系统事件类型
+/// 文件系统事件类型（预留功能）
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileEvent {
     /// 文件创建
@@ -19,6 +20,7 @@ pub enum FileEvent {
     Error { path: PathBuf, error: String },
 }
 
+#[allow(dead_code)]
 impl FileEvent {
     /// 获取事件的主要路径
     pub fn primary_path(&self) -> Option<&PathBuf> {

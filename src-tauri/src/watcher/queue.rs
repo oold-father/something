@@ -1,11 +1,9 @@
 use super::event::FileEvent;
 use std::collections::HashSet;
-use std::path::PathBuf;
-use std::time::Duration;
 use tokio::sync::mpsc;
-use tokio::time::sleep;
 
-/// 事件队列配置
+/// 事件队列配置（预留功能）
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct QueueConfig {
     /// 队列最大容量
@@ -16,6 +14,7 @@ pub struct QueueConfig {
     pub batch_size: usize,
 }
 
+#[allow(dead_code)]
 impl Default for QueueConfig {
     fn default() -> Self {
         QueueConfig {
@@ -26,7 +25,8 @@ impl Default for QueueConfig {
     }
 }
 
-/// 事件队列
+/// 事件队列（预留功能）
+#[allow(dead_code)]
 pub struct EventQueue {
     sender: mpsc::Sender<FileEvent>,
     receiver: mpsc::Receiver<FileEvent>,
@@ -34,6 +34,7 @@ pub struct EventQueue {
     processed_paths: HashSet<String>,
 }
 
+#[allow(dead_code)]
 impl EventQueue {
     /// 创建新的事件队列
     pub fn new(config: QueueConfig) -> Self {
@@ -54,7 +55,10 @@ impl EventQueue {
 
     /// 尝试立即发送事件（不等待）
     pub fn try_send(&self, event: FileEvent) -> Result<(), FileEvent> {
-        self.sender.try_send(event).map_err(|e| e.0)
+        self.sender.try_send(event).map_err(|e| match e {
+            tokio::sync::mpsc::error::TrySendError::Full(ev) => ev,
+            tokio::sync::mpsc::error::TrySendError::Closed(ev) => ev,
+        })
     }
 
     /// 接收事件
@@ -84,7 +88,7 @@ impl EventQueue {
 
     /// 接收并去重事件（防抖处理）
     pub async fn recv_deduplicated(&mut self) -> Vec<FileEvent> {
-        let mut batch = self.recv_batch().await;
+        let batch = self.recv_batch().await;
         let mut deduped = Vec::new();
         let mut path_map: std::collections::HashMap<String, FileEvent> = std::collections::HashMap::new();
 
@@ -119,78 +123,5 @@ impl EventQueue {
     /// 获取队列长度
     pub fn len(&self) -> usize {
         self.receiver.len()
-    }
-
-    /// 关闭队列
-    pub fn close(&self) {
-        self.sender.close();
-    }
-}
-
-/// 事件处理器 trait
-#[async_trait::async_trait]
-pub trait EventHandler: Send + Sync {
-    /// 处理单个事件
-    async fn handle(&self, event: FileEvent) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-
-    /// 批量处理事件
-    async fn handle_batch(&self, events: Vec<FileEvent>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        for event in events {
-            self.handle(event).await?;
-        }
-        Ok(())
-    }
-}
-
-/// 防抖包装器
-pub struct DebouncedHandler<H> {
-    inner: H,
-    delay: Duration,
-    last_events: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, FileEvent>>>,
-}
-
-impl<H: EventHandler + Clone> DebouncedHandler<H> {
-    pub fn new(handler: H, delay_ms: u64) -> Self {
-        DebouncedHandler {
-            inner: handler,
-            delay: Duration::from_millis(delay_ms),
-            last_events: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl<H: EventHandler + Send + Sync + Clone> EventHandler for DebouncedHandler<H> {
-    async fn handle(&self, event: FileEvent) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if let Some(path) = event.primary_path() {
-            let path_str = path.to_string_lossy().to_string();
-            let delay = self.delay;
-            let inner = self.inner.clone();
-            let last_events = self.last_events.clone();
-
-            // 存储事件
-            {
-                let mut events = last_events.lock().unwrap();
-                events.insert(path_str.clone(), event.clone());
-            }
-
-            // 延迟后处理
-            tokio::spawn(async move {
-                sleep(delay).await;
-
-                let event_to_handle = {
-                    let mut events = last_events.lock().unwrap();
-                    events.remove(&path_str)
-                };
-
-                if let Some(evt) = event_to_handle {
-                    let _ = inner.handle(evt).await;
-                }
-            });
-
-            Ok(())
-        } else {
-            self.inner.handle(event).await
-        }
     }
 }

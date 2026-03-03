@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "文件标签管理系统",
+  "productName": "something",
   "version": "0.1.0",
-  "identifier": "com.filetagmanager.app",
+  "identifier": "com.something.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "文件标签管理系统",
+        "title": "something",
         "width": 1200,
         "height": 800,
         "minWidth": 800,

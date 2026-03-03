@@ -5,19 +5,14 @@ mod queries;
 mod tests;
 
 pub use models::*;
-pub use queries::*;
 
 use crate::error::{AppError, Result};
 use parking_lot::Mutex;
 use rusqlite::Connection;
 use std::path::PathBuf;
-use once_cell::sync::Lazy;
 
 // 包含数据库表结构的 SQL 文件
 const SCHEMA_SQL: &str = include_str!("schema.sql");
-
-/// 数据库单例
-static DB_INSTANCE: Lazy<Mutex<Option<Database>>> = Lazy::new(|| Mutex::new(None));
 
 /// 数据库连接包装器
 pub struct Database {
@@ -53,27 +48,9 @@ impl Database {
         let config_dir = dirs::config_dir()
             .ok_or_else(|| AppError::ConfigNotFound("无法获取配置目录".to_string()))?;
 
-        let app_dir = config_dir.join("file-tag-manager");
+        let app_dir = config_dir.join("something");
 
         Ok(app_dir.join("file_tags.db"))
-    }
-
-    /// 初始化数据库单例
-    pub fn init() -> Result<()> {
-        let db = Database::new()?;
-        let mut instance = DB_INSTANCE.lock();
-        *instance = Some(db);
-        Ok(())
-    }
-
-    /// 获取数据库单例
-    pub fn instance() -> Result<&'static Mutex<Option<Database>>> {
-        let instance = DB_INSTANCE.lock();
-        if instance.is_none() {
-            drop(instance);
-            Self::init()?;
-        }
-        Ok(&DB_INSTANCE)
     }
 
     /// 初始化默认标签
@@ -106,14 +83,4 @@ impl Database {
 
         Ok(())
     }
-}
-
-// 确保数据库在使用前初始化
-pub fn ensure_db_initialized() -> Result<()> {
-    Database::init()?;
-    let db = DB_INSTANCE.lock();
-    if let Some(ref db) = *db {
-        db.init_default_tags()?;
-    }
-    Ok(())
 }

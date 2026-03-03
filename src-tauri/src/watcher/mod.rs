@@ -5,20 +5,21 @@ mod scanner;
 #[cfg(test)]
 mod tests;
 
-pub use event::FileEvent;
-pub use queue::{EventQueue, EventHandler, DebouncedHandler, QueueConfig};
-pub use scanner::{DirectoryScanner, ScanResult, ScanConfig};
+pub use scanner::{DirectoryScanner, ScanResult, ScanConfig, ScanError};
 
-use crate::db::Database;
+// FileWatcher 和相关事件是预留功能
+#[allow(dead_code)]
+pub use event::FileEvent;
+
 use crate::error::Result;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 
-/// 文件监控器
+/// 文件监控器（预留功能）
+#[allow(dead_code)]
 pub struct FileWatcher {
     watcher: RecommendedWatcher,
     event_sender: mpsc::Sender<FileEvent>,
@@ -26,6 +27,8 @@ pub struct FileWatcher {
     is_running: Arc<std::sync::atomic::AtomicBool>,
 }
 
+/// 文件监控器实现（预留功能）
+#[allow(dead_code)]
 impl FileWatcher {
     /// 创建新的文件监控器
     pub fn new() -> Result<Self> {
@@ -114,176 +117,5 @@ impl FileWatcher {
         }
 
         file_events
-    }
-}
-
-/// 文件监控管理器
-pub struct WatcherManager {
-    watcher: FileWatcher,
-    event_queue: EventQueue,
-    task_handle: Option<JoinHandle<()>>,
-}
-
-impl WatcherManager {
-    /// 创建新的监控管理器
-    pub fn new() -> Result<Self> {
-        let watcher = FileWatcher::new()?;
-        let event_queue = EventQueue::new(QueueConfig::default());
-
-        Ok(WatcherManager {
-            watcher,
-            event_queue,
-            task_handle: None,
-        })
-    }
-
-    /// 启动监控
-    pub async fn start<H: EventHandler + Send + Sync + 'static>(
-        &mut self,
-        handler: H,
-    ) -> Result<()> {
-        if self.task_handle.is_some() {
-            return Ok(()); // 已在运行
-        }
-
-        let mut rx = self.event_queue.sender.clone();
-
-        let handle = tokio::spawn(async move {
-            while let Some(event) = rx.recv().await {
-                let _ = handler.handle(event).await;
-            }
-        });
-
-        self.task_handle = Some(handle);
-
-        Ok(())
-    }
-
-    /// 停止监控
-    pub async fn stop(&mut self) -> Result<()> {
-        if let Some(handle) = self.task_handle.take() {
-            handle.abort();
-        }
-        self.event_queue.close();
-        Ok(())
-    }
-
-    /// 添加监控路径
-    pub async fn add_watch(&mut self, path: &Path, recursive: bool) -> Result<()> {
-        self.watcher.watch(path, recursive)?;
-
-        // 发送扫描开始事件
-        let _ = self.event_queue.send(FileEvent::ScanStart {
-            path: path.to_path_buf(),
-        }).await;
-
-        Ok(())
-    }
-
-    /// 移除监控路径
-    pub async fn remove_watch(&mut self, path: &Path) -> Result<()> {
-        self.watcher.unwatch(path)?;
-        Ok(())
-    }
-
-    /// 获取事件队列
-    pub fn event_queue(&self) -> &EventQueue {
-        &self.event_queue
-    }
-}
-
-impl Drop for WatcherManager {
-    fn drop(&mut self) {
-        // 停止所有监控
-        self.watcher.unwatch_all();
-        self.event_queue.close();
-    }
-}
-
-#[async_trait::async_trait]
-impl EventHandler for Database {
-    async fn handle(&self, event: FileEvent) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        use crate::db::{File, FileStatus, FileType};
-
-        match event {
-            FileEvent::Created { path } | FileEvent::Modified { path } => {
-                // 处理文件创建/修改
-                if let Ok(metadata) = std::fs::metadata(&path) {
-                    if metadata.is_file() {
-                        let path_str = path.to_string_lossy().to_string();
-                        let name = path.file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("unknown")
-                            .to_string();
-
-                        let extension = path.extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("")
-                            .to_string();
-
-                        let file_type = FileType::from_extension(&extension);
-
-                        // 创建或更新文件记录
-                        let existing_file = self.get_file_by_path(&path_str)?;
-
-                        if existing_file.is_none() {
-                            let file = File {
-                                id: None,
-                                path: path_str,
-                                name,
-                                extension,
-                                size: metadata.len(),
-                                file_type,
-                                created_at: chrono::Utc::now(),
-                                modified_at: chrono::Utc::now(),
-                                accessed_at: chrono::Utc::now(),
-                                status: FileStatus::Active,
-                                indexed_at: chrono::Utc::now(),
-                                metadata: None,
-                            };
-
-                            let file_id = self.create_file(&file)?;
-
-                            // 添加自动标签
-                            let _ = self.add_tag_to_file_by_name(file_id, file_type.display_name(), true);
-                        }
-                    }
-                }
-            }
-            FileEvent::Deleted { path } => {
-                // 处理文件删除
-                let path_str = path.to_string_lossy().to_string();
-                if let Some(file) = self.get_file_by_path(&path_str)? {
-                    if let Some(id) = file.id {
-                        self.update_file_status(id, FileStatus::Deleted)?;
-                    }
-                }
-            }
-            FileEvent::Moved { from, to } => {
-                // 处理文件移动
-                let from_str = from.to_string_lossy().to_string();
-                let to_str = to.to_string_lossy().to_string();
-
-                if let Some(mut file) = self.get_file_by_path(&from_str)? {
-                    file.path = to_str.clone();
-                    file.name = to.file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("unknown")
-                        .to_string();
-
-                    file.extension = to.extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("")
-                        .to_string();
-
-                    // 更新文件记录（简化处理，实际应该有专门的 update 方法）
-                    let _ = self.delete_file(file.id.unwrap_or(0));
-                    let _ = self.create_file(&file);
-                }
-            }
-            _ => {}
-        }
-
-        Ok(())
     }
 }

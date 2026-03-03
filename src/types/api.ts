@@ -96,3 +96,18 @@ export interface ScanResult {
   skippedFiles: number;
   errors: Array<[string, string]>;
 }
+
+export interface BatchScanResult {
+  totalDirectories: number;
+  scannedDirectories: number;
+  totalFiles: number;
+  addedFiles: number;
+  updatedFiles: number;
+  skippedFiles: number;
+  errors: BatchScanError[];
+}
+
+export interface BatchScanError {
+  path: string;
+  message: string;
+}

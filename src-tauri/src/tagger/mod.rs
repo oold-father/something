@@ -1,18 +1,20 @@
 mod rules;
 mod auto;
 
-pub use rules::{TagRule, TagCondition, DatePattern, default_rules};
+// AutoTagger 是实际使用的
 pub use auto::AutoTagger;
 
 use crate::db::{Database, File};
 use crate::error::Result;
 
-/// 标签生成管理器
+/// 标签生成管理器（预留功能）
+#[allow(dead_code)]
 pub struct TagGenerator {
     tagger: AutoTagger,
     db: Database,
 }
 
+#[allow(dead_code)]
 impl TagGenerator {
     /// 创建新的标签生成器
     pub fn new(db: Database) -> Self {

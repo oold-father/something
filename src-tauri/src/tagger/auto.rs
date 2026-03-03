@@ -14,7 +14,8 @@ impl AutoTagger {
         }
     }
 
-    /// 使用自定义规则创建
+    /// 使用自定义规则创建（预留功能）
+    #[allow(dead_code)]
     pub fn with_rules(rules: Vec<TagRule>) -> Self {
         AutoTagger { rules }
     }
@@ -28,22 +29,26 @@ impl AutoTagger {
             .collect()
     }
 
-    /// 获取所有规则
+    /// 获取所有规则（预留功能）
+    #[allow(dead_code)]
     pub fn rules(&self) -> &[TagRule] {
         &self.rules
     }
 
-    /// 添加规则
+    /// 添加规则（预留功能）
+    #[allow(dead_code)]
     pub fn add_rule(&mut self, rule: TagRule) {
         self.rules.push(rule);
     }
 
-    /// 移除规则（按名称）
+    /// 移除规则（按名称）（预留功能）
+    #[allow(dead_code)]
     pub fn remove_rule(&mut self, name: &str) {
         self.rules.retain(|r| r.name != name);
     }
 
-    /// 重置为默认规则
+    /// 重置为默认规则（预留功能）
+    #[allow(dead_code)]
     pub fn reset_to_default(&mut self) {
         self.rules = default_rules();
     }

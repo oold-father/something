@@ -1,5 +1,4 @@
 use crate::db::{Database, File, FileType, FileStatus, SystemStats};
-use crate::error::AppError;
 use std::path::Path;
 
 /// 获取文件列表

@@ -1,11 +1,13 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import SearchBar from './components/SearchBar';
 import TagPanel from './components/TagPanel';
+import WatchedDirectories from './components/WatchedDirectories';
 import FileList from './components/FileList';
 import { useStore } from './stores/useStore';
 import { api } from './lib/api';
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState<'tags' | 'directories'>('tags');
   const searchKeywords = useStore((s) => s.searchKeywords);
   const searchOperator = useStore((s) => s.searchOperator);
   const setSearchResults = useStore((s) => s.setSearchResults);
@@ -14,12 +16,10 @@ export default function App() {
   const setWatchedDirectories = useStore((s) => s.setWatchedDirectories);
 
   useEffect(() => {
-    // 加载初始数据
     loadInitialData();
   }, []);
 
   useEffect(() => {
-    // 当搜索关键字变化时执行搜索
     if (searchKeywords.length > 0) {
       performSearch();
     } else {
@@ -29,11 +29,9 @@ export default function App() {
 
   const loadInitialData = async () => {
     try {
-      // 加载系统统计
       const stats = await api.getStats();
       setStats(stats);
 
-      // 加载监控目录
       const dirs = await api.getWatchedDirectories();
       setWatchedDirectories(dirs);
     } catch (error) {
@@ -61,9 +59,36 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-background text-foreground">
-      {/* 左侧标签面板 */}
-      <div className="w-64 flex-shrink-0">
-        <TagPanel />
+      {/* 左侧面板 */}
+      <div className="w-72 flex-shrink-0 flex flex-col bg-card border-r border-border">
+        {/* 标签切换 */}
+        <div className="flex border-b border-border">
+          <button
+            onClick={() => setActiveTab('tags')}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'tags'
+                ? 'bg-primary text-primary-foreground border-b-2 border-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            标签
+          </button>
+          <button
+            onClick={() => setActiveTab('directories')}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'directories'
+                ? 'bg-primary text-primary-foreground border-b-2 border-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            监控目录
+          </button>
+        </div>
+
+        {/* 内容区域 */}
+        <div className="flex-1 overflow-y-auto">
+          {activeTab === 'tags' ? <TagPanel /> : <WatchedDirectories />}
+        </div>
       </div>
 
       {/* 右侧主内容区 */}

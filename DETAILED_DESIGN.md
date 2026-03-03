@@ -1,4 +1,4 @@
-# 文件标签管理系统 - 详细设计文档
+# something - 详细设计文档
 
 > **设计版本**：2.0.0
 > **创建日期**：2026-02-27
@@ -896,9 +896,9 @@ pub type Result<T> = std::result::Result<T, AppError>;
 
 | 操作系统 | 数据路径 |
 |---------|---------|
-| Windows | `%APPDATA%\file-tag-manager\` |
-| macOS | `~/Library/Application Support/file-tag-manager/` |
-| Linux | `~/.config/file-tag-manager/` |
+| Windows | `%APPDATA%\something\` |
+| macOS | `~/Library/Application Support/something/` |
+| Linux | `~/.config/something/` |
 
 ### 8.2 配置文件
 

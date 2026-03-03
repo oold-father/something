@@ -101,6 +101,10 @@ export const api = {
     return invoke('scan_directory', { path, recursive });
   },
 
+  scanAllDirectories: async (): Promise<Api.BatchScanResult> => {
+    return invoke('scan_all_directories');
+  },
+
   // ===== 系统操作 =====
   getStats: async (): Promise<Api.SystemStats> => {
     return invoke('get_stats');

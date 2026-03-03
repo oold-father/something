@@ -1,7 +1,7 @@
 {
-  "name": "file-tag-manager",
+  "name": "something",
   "version": "0.1.0",
-  "description": "文件标签管理系统",
+  "description": "something",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,6 +20,7 @@
     "react-dom": "^18.2.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-opener": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.0.0",
     "zustand": "^4.4.0",
     "@tanstack/react-query": "^5.0.0",
     "lucide-react": "^0.300.0",

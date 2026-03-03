@@ -39,7 +39,8 @@ impl FileType {
         }
     }
 
-    /// 获取文件类型的中文名称
+    /// 获取文件类型的中文名称（预留功能）
+    #[allow(dead_code)]
     pub fn display_name(&self) -> &'static str {
         match self {
             FileType::Image => "图片",
@@ -146,7 +147,8 @@ pub struct Tag {
     pub created_at: DateTime<Utc>,
 }
 
-/// 文件与标签的关联
+/// 文件与标签的关联（预留功能）
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileTag {
     pub file_id: i64,
@@ -203,6 +205,8 @@ pub enum SearchOperator {
 }
 
 impl SearchOperator {
+    /// 获取运算符字符串（预留功能）
+    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             SearchOperator::And => "AND",

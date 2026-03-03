@@ -66,7 +66,8 @@ impl Database {
         Ok(None)
     }
 
-    /// 更新文件状态
+    /// 更新文件状态（预留功能）
+    #[allow(dead_code)]
     pub fn update_file_status(&self, id: i64, status: FileStatus) -> Result<()> {
         let conn = self.conn.lock();
 
@@ -119,7 +120,8 @@ impl Database {
         Ok(files)
     }
 
-    /// 获取文件总数
+    /// 获取文件总数（预留功能）
+    #[allow(dead_code)]
     pub fn get_file_count(&self) -> Result<i64> {
         let conn = self.conn.lock();
 

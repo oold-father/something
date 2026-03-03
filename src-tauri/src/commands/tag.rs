@@ -1,5 +1,4 @@
 use crate::db::{Database, Tag, CreateTagRequest, TagType};
-use crate::error::AppError;
 
 /// 获取所有标签
 #[tauri::command]

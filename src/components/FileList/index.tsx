@@ -2,7 +2,7 @@
  * 文件列表组件
  */
 import { useEffect, useState } from 'react';
-import { File, Calendar, HardDrive } from 'lucide-react';
+import { File, Calendar, HardDrive, RefreshCw, Download } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatFileSize, formatDate, getFileIcon } from '../../lib/utils';
 import { useStore } from '../../stores/useStore';
@@ -13,10 +13,12 @@ export default function FileList() {
   const setFiles = useStore((s) => s.setFiles);
   const searchResults = useStore((s) => s.searchResults);
   const isLoading = useStore((s) => s.isLoading);
+  const setIsLoading = useStore((s) => s.setIsLoading);
   const selectedTags = useStore((s) => s.selectedTags);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [page, setPage] = useState(0);
-  const hasMore = files.length > 0;
+  const hasMore = files.length > 0 && files.length % 50 === 0;
 
   useEffect(() => {
     loadFiles();
@@ -31,7 +33,8 @@ export default function FileList() {
     }
   }, [selectedTags]);
 
-  const loadFiles = async (offset = 0) => {
+  const loadFiles = async (offset = 0, silent = false) => {
+    if (!silent) setIsLoading(true);
     try {
       const data = await api.getFiles({ limit: 50, offset });
       if (offset === 0) {
@@ -41,28 +44,40 @@ export default function FileList() {
       }
     } catch (error) {
       console.error('加载文件失败:', error);
+    } finally {
+      if (!silent) setIsLoading(false);
     }
   };
 
   const loadFilesByTags = async () => {
+    setIsLoading(true);
     try {
       const data = await api.getFilesByTags(selectedTags);
       setFiles(data);
     } catch (error) {
       console.error('按标签加载文件失败:', error);
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    setPage(0);
+    await loadFiles(0, false);
+    setIsRefreshing(false);
   };
 
   const handleLoadMore = () => {
     setLoadingMore(true);
     const newPage = page + 1;
     setPage(newPage);
-    loadFiles(newPage * 50).finally(() => setLoadingMore(false));
+    loadFiles(newPage * 50, true).finally(() => setLoadingMore(false));
   };
 
   const handleFileClick = async (file: FileType) => {
     try {
-      // 使用 Tauri 的 shell API 打开文件
+      // 使用 Tauri 的 shell API 打开文件所在目录
       const { open } = await import('@tauri-apps/plugin-opener') as any;
       open(file.path);
     } catch (error) {
@@ -85,17 +100,40 @@ export default function FileList() {
             共 {totalCount} 个文件
           </p>
         </div>
+        <button
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-50 transition-colors"
+          title="刷新文件列表"
+        >
+          <RefreshCw size={20} className={isRefreshing ? 'animate-spin' : ''} />
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {isLoading && !displayFiles.length ? (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            加载中...
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+            <RefreshCw size={32} className="mb-4 animate-spin" />
+            <p>加载中...</p>
           </div>
         ) : displayFiles.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-            <File className="w-16 h-16 mb-4 opacity-50" />
-            <p>暂无文件</p>
+            <File size={64} className="mb-4 opacity-30" />
+            <p className="text-lg">暂无文件</p>
+            <p className="text-sm mt-2">
+              {selectedTags.length > 0
+                ? '该标签下暂无文件，请尝试其他标签或添加监控目录'
+                : '请先添加监控目录并扫描文件'}
+            </p>
+            {selectedTags.length === 0 && (
+              <button
+                onClick={handleRefresh}
+                className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              >
+                <Download size={16} />
+                扫描文件
+              </button>
+            )}
           </div>
         ) : (
           <ul className="divide-y divide-border">
@@ -131,9 +169,9 @@ function FileItem({ file, onClick }: { file: FileType & { tags?: any[] }; onClic
   return (
     <li
       onClick={onClick}
-      className="flex items-center gap-4 p-4 hover:bg-muted/50 cursor-pointer transition-colors"
+      className="flex items-center gap-4 p-4 hover:bg-muted/50 cursor-pointer transition-colors group"
     >
-      <div className="text-2xl">{icon}</div>
+      <div className="text-2xl group-hover:scale-110 transition-transform">{icon}</div>
       <div className="flex-1 min-w-0">
         <div className="font-medium truncate">{file.name}</div>
         <div className="text-sm text-muted-foreground truncate">{file.path}</div>
@@ -152,7 +190,7 @@ function FileItem({ file, onClick }: { file: FileType & { tags?: any[] }; onClic
             {file.tags.slice(0, 3).map((tag) => (
               <span
                 key={tag.id || tag.name}
-                className="text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground"
+                className="text-xs px-2 py-0.5 rounded-full text-white"
                 style={{ backgroundColor: tag.color }}
               >
                 {tag.displayName || tag.name}

@@ -4,6 +4,8 @@
 mod db;
 mod error;
 mod commands;
+mod watcher;
+mod tagger;
 
 use db::Database;
 
@@ -11,13 +13,17 @@ pub fn run() {
     // 初始化数据库
     let db = Database::new().expect("Failed to initialize database");
 
-    // 注册 Tauri 命令（暂时注释掉 watcher 相关命令）
-    commands::register_commands(db);
+    // 初始化默认标签
+    db.init_default_tags().expect("Failed to initialize default tags");
+
+    // 注册 Tauri 命令并获取 Builder
+    let builder = commands::register_commands(db);
 
     // 运行 Tauri 应用
-    tauri::Builder::default()
+    builder
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

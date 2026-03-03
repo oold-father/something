@@ -9,7 +9,15 @@
       "Bash(cargo test:*)",
       "Bash(npm install:*)",
       "Bash(npm test:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(cargo:*)",
+      "Bash(powershell.exe:*)",
+      "Bash(export:*)",
+      "Bash(cmd.exe:*)",
+      "Bash(powershell:*)",
+      "Bash(rm:*)",
+      "Bash(git add:*)",
+      "Bash(taskkill:*)"
     ]
   }
 }
