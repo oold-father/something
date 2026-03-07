@@ -139,6 +139,8 @@ impl Database {
         let conn = self.conn.lock();
         let now = Utc::now().timestamp();
 
+        let icon_value: Option<&str> = tag.icon.as_ref().map(|s| s.as_str());
+
         conn.execute(
             "INSERT INTO tags (name, display_name, tag_type, color, icon, use_count, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -147,7 +149,7 @@ impl Database {
                 tag.display_name,
                 tag.tag_type.as_str(),
                 tag.color,
-                tag.icon,
+                if let Some(icon) = icon_value { icon } else { "" },
                 tag.use_count,
                 now,
             ],
@@ -467,9 +469,9 @@ impl Database {
         // 构建基础 SQL
         let mut sql = String::from(
             "SELECT f.id, f.path, f.name, f.extension, f.size, f.file_type, f.created_at, f.modified_at, f.accessed_at, f.status, f.indexed_at, f.metadata, fts.rank
-             FROM file_tags_fts fts
+             FROM file_tags_content fts
              JOIN files f ON fts.file_id = f.id
-             WHERE file_tags_fts MATCH ?1 AND f.status = 'active'"
+             WHERE fts MATCH ?1 AND f.status = 'active'"
         );
 
         // 添加文件类型过滤
@@ -529,9 +531,9 @@ impl Database {
         // 获取总数
         let total: i64 = conn.query_row(
             "SELECT COUNT(DISTINCT f.id)
-             FROM file_tags_fts fts
+             FROM file_tags_content fts
              JOIN files f ON fts.file_id = f.id
-             WHERE file_tags_fts MATCH ?1 AND f.status = 'active'",
+             WHERE fts MATCH ?1 AND f.status = 'active'",
             params![fts_query],
             |row| row.get(0),
         )?;
@@ -566,10 +568,12 @@ impl Database {
 
     /// 将数据库行转换为 File
     fn row_to_file(&self, row: &rusqlite::Row) -> Result<File> {
-        let file_type_str: String = row.get(4)?;
+        // SQL列顺序: id(0), path(1), name(2), extension(3), size(4), file_type(5),
+        //            created_at(6), modified_at(7), accessed_at(8), status(9), indexed_at(10), metadata(11)
+        let file_type_str: String = row.get(5)?;
         let file_type = FileType::from_extension(&file_type_str);
 
-        let status_str: String = row.get(8)?;
+        let status_str: String = row.get(9)?;
         let status = FileStatus::from_str(&status_str);
 
         let metadata: Option<String> = row.get(11)?;
@@ -580,13 +584,13 @@ impl Database {
             path: row.get(1)?,
             name: row.get(2)?,
             extension: row.get(3)?,
-            size: row.get(5)?,
+            size: row.get(4)?,
             file_type,
             created_at: DateTime::from_timestamp(row.get(6)?, 0).unwrap(),
             modified_at: DateTime::from_timestamp(row.get(7)?, 0).unwrap(),
-            accessed_at: DateTime::from_timestamp(row.get(7)?, 0).unwrap(),
+            accessed_at: DateTime::from_timestamp(row.get(8)?, 0).unwrap(),
             status,
-            indexed_at: DateTime::from_timestamp(row.get(9)?, 0).unwrap(),
+            indexed_at: DateTime::from_timestamp(row.get(10)?, 0).unwrap(),
             metadata,
         })
     }
