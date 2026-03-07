@@ -459,89 +459,177 @@ impl Database {
         })
     }
 
-    /// 搜索文件
+    /// 搜索文件 - 支持混合搜索策略（中文用LIKE，英文数字用FTS）
     pub fn search_files(&self, query: &SearchQuery) -> Result<SearchResultResponse> {
         let conn = self.conn.lock();
 
-        // 构建 FTS 查询
-        let fts_query = self.build_fts_query(query)?;
-
-        // 构建基础 SQL
-        let mut sql = String::from(
-            "SELECT f.id, f.path, f.name, f.extension, f.size, f.file_type, f.created_at, f.modified_at, f.accessed_at, f.status, f.indexed_at, f.metadata, fts.rank
-             FROM file_tags_content fts
-             JOIN files f ON fts.file_id = f.id
-             WHERE fts MATCH ?1 AND f.status = 'active'"
-        );
-
-        // 添加文件类型过滤
-        if let Some(file_type) = &query.file_type_filter {
-            sql.push_str(&format!(" AND f.file_type = '{}'", file_type.to_string()));
-        }
-
-        sql.push_str(" ORDER BY fts.rank DESC, f.created_at DESC LIMIT ?2 OFFSET ?3");
-
-        let mut stmt = conn.prepare(&sql)?;
+        // 检测关键字是否包含中文
+        let has_chinese = query.keywords.iter().any(|k| self.contains_chinese(k));
 
         let mut results = Vec::new();
-        let mut rows = stmt.query(params![
-            fts_query,
-            query.limit as i64,
-            query.offset as i64
-        ])?;
+        let total: i64;
 
-        while let Some(row) = rows.next()? {
-            let file = self.row_to_file(row)?;
-            let relevance: f32 = row.get(12)?;
+        if has_chinese {
+            // 中文搜索：使用 LIKE 进行模糊匹配
+            let like_conditions: Vec<String> = query.keywords
+                .iter()
+                .map(|k| format!("(f.name LIKE '%{}%' OR f.path LIKE '%{}%' OR f.path LIKE '%{}%')",
+                    self.escape_like(k), self.escape_like(k), self.escape_like(k)))
+                .collect();
 
-            let tags = if let Some(id) = file.id {
-                // 重新获取标签（因为行不包含）
-                conn.query_row(
-                    "SELECT t.id, t.name, t.display_name, t.tag_type, t.color, t.icon, t.use_count, t.created_at
-                     FROM tags t
-                     JOIN file_tags ft ON t.id = ft.tag_id
-                     WHERE ft.file_id = ?1",
-                    params![id],
-                    |row| {
-                        let tag_type_str: String = row.get(3)?;
-                        let tag_type = TagType::from_str(&tag_type_str);
-                        Ok(Tag {
-                            id: Some(row.get(0)?),
-                            name: row.get(1)?,
-                            display_name: row.get(2)?,
-                            tag_type,
-                            color: row.get(4)?,
-                            icon: row.get(5)?,
-                            use_count: row.get(6)?,
-                            created_at: DateTime::from_timestamp(row.get(7)?, 0).unwrap(),
-                        })
-                    },
-                ).optional()?
-            } else {
-                None
+            let like_clause = match query.operator {
+                SearchOperator::And => like_conditions.join(" AND "),
+                SearchOperator::Or => like_conditions.join(" OR "),
             };
 
-            results.push(SearchResult {
-                file,
-                tags: if tags.is_some() { vec![tags.unwrap()] } else { vec![] },
-                relevance,
-            });
-        }
+            let mut sql = format!(
+                "SELECT f.id, f.path, f.name, f.extension, f.size, f.file_type, f.created_at, f.modified_at, f.accessed_at, f.status, f.indexed_at, f.metadata, 0.0 as relevance
+                 FROM files f
+                 WHERE ({}) AND f.status = 'active'",
+                like_clause
+            );
 
-        // 获取总数
-        let total: i64 = conn.query_row(
-            "SELECT COUNT(DISTINCT f.id)
-             FROM file_tags_content fts
-             JOIN files f ON fts.file_id = f.id
-             WHERE fts MATCH ?1 AND f.status = 'active'",
-            params![fts_query],
-            |row| row.get(0),
-        )?;
+            // 添加文件类型过滤
+            if let Some(file_type) = &query.file_type_filter {
+                sql.push_str(&format!(" AND f.file_type = '{}'", file_type.to_string()));
+            }
+
+            sql.push_str(&format!(" ORDER BY f.created_at DESC LIMIT {} OFFSET {}",
+                query.limit, query.offset));
+
+            let mut stmt = conn.prepare(&sql)?;
+            let mut rows = stmt.query([])?;
+
+            while let Some(row) = rows.next()? {
+                let file = self.row_to_file(row)?;
+                let relevance: f32 = row.get(12)?;
+
+                let tags = self.get_tags_for_file(&conn, file.id)?;
+
+                results.push(SearchResult {
+                    file,
+                    tags,
+                    relevance,
+                });
+            }
+
+            // 获取总数
+            let count_sql = format!(
+                "SELECT COUNT(DISTINCT f.id)
+                 FROM files f
+                 WHERE ({}) AND f.status = 'active'",
+                like_clause
+            );
+            total = conn.query_row(&count_sql, [], |row| row.get(0))?;
+
+        } else {
+            // 英文/数字搜索：使用 FTS 全文搜索
+            let fts_query = self.build_fts_query(query)?;
+
+            let mut sql = String::from(
+                "SELECT f.id, f.path, f.name, f.extension, f.size, f.file_type, f.created_at, f.modified_at, f.accessed_at, f.status, f.indexed_at, f.metadata, bm25(file_tags_content)
+                 FROM files f
+                 JOIN file_tags_content ON f.id = file_tags_content.file_id
+                 WHERE file_tags_content MATCH ?1 AND f.status = 'active'"
+            );
+
+            // 添加文件类型过滤
+            if let Some(file_type) = &query.file_type_filter {
+                sql.push_str(&format!(" AND f.file_type = '{}'", file_type.to_string()));
+            }
+
+            sql.push_str(" ORDER BY bm25(file_tags_content) DESC, f.created_at DESC LIMIT ?2 OFFSET ?3");
+
+            let mut stmt = conn.prepare(&sql)?;
+            let mut rows = stmt.query(params![
+                fts_query,
+                query.limit as i64,
+                query.offset as i64
+            ])?;
+
+            while let Some(row) = rows.next()? {
+                let file = self.row_to_file(row)?;
+                let relevance: f32 = row.get(12)?;
+
+                let tags = self.get_tags_for_file(&conn, file.id)?;
+
+                results.push(SearchResult {
+                    file,
+                    tags,
+                    relevance,
+                });
+            }
+
+            // 获取总数
+            total = conn.query_row(
+                "SELECT COUNT(DISTINCT f.id)
+                 FROM files f
+                 JOIN file_tags_content ON f.id = file_tags_content.file_id
+                 WHERE file_tags_content MATCH ?1 AND f.status = 'active'",
+                params![fts_query],
+                |row| row.get(0),
+            )?;
+        }
 
         Ok(SearchResultResponse {
             results,
             total,
         })
+    }
+
+    /// 检测字符串是否包含中文字符
+    fn contains_chinese(&self, text: &str) -> bool {
+        text.chars().any(|c| {
+            let code = c as u32;
+            // 基本汉字范围：\u4e00-\u9fff
+            (0x4e00..=0x9fff).contains(&code) ||
+            // 扩展汉字范围A：\u3400-\u4dbf
+            (0x3400..=0x4dbf).contains(&code) ||
+            // 扩展汉字范围B：\u20000-\u2a6df
+            (0x20000..=0x2a6df).contains(&code) ||
+            // CJK 标点符号
+            (0x3000..=0x303f).contains(&code) ||
+            (0xff00..=0xffef).contains(&code)
+        })
+    }
+
+    /// 转义 LIKE 语句中的特殊字符
+    fn escape_like(&self, text: &str) -> String {
+        text.replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
+    }
+
+    /// 获取文件的标签列表
+    fn get_tags_for_file(&self, conn: &rusqlite::Connection, file_id: Option<i64>) -> Result<Vec<Tag>> {
+        if let Some(id) = file_id {
+            let mut tags = Vec::new();
+            let mut stmt = conn.prepare(
+                "SELECT t.id, t.name, t.display_name, t.tag_type, t.color, t.icon, t.use_count, t.created_at
+                 FROM tags t
+                 JOIN file_tags ft ON t.id = ft.tag_id
+                 WHERE ft.file_id = ?1"
+            )?;
+            let mut rows = stmt.query(params![id])?;
+
+            while let Some(row) = rows.next()? {
+                let tag_type_str: String = row.get(3)?;
+                let tag_type = TagType::from_str(&tag_type_str);
+                tags.push(Tag {
+                    id: Some(row.get(0)?),
+                    name: row.get(1)?,
+                    display_name: row.get(2)?,
+                    tag_type,
+                    color: row.get(4)?,
+                    icon: row.get(5)?,
+                    use_count: row.get(6)?,
+                    created_at: DateTime::from_timestamp(row.get(7)?, 0).unwrap(),
+                });
+            }
+            Ok(tags)
+        } else {
+            Ok(vec![])
+        }
     }
 
     /// 构建 FTS 查询

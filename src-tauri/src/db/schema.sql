@@ -81,7 +81,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS file_tags_content USING fts5(
     file_id,
     file_name,
     file_path,
-    tag_names
+    tag_names,
+    tokenize="unicode61"
 );
 
 -- 触发器：同步数据到 FTS 索引
