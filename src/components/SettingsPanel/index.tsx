@@ -2,6 +2,8 @@
  * 设置面板组件
  */
 import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { useStore } from '../../stores/useStore';
 import {
   Settings,
   Palette,
@@ -10,7 +12,11 @@ import {
   Save,
   RotateCcw,
   X,
+  Wrench,
 } from 'lucide-react';
+
+// 添加详细日志
+console.log('[SettingsPanel] Component loaded');
 
 export interface AppSettings {
   // 外观设置
@@ -48,10 +54,12 @@ export default function SettingsPanel({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onSave?: (settings: AppSettings) => void;
+  onSave?: (settings: Partial<AppSettings>) => void;
 }) {
+  console.log('[SettingsPanel] Render called, isOpen:', isOpen);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [hasChanges, setHasChanges] = useState(false);
+  const [isFixing, setIsFixing] = useState(false);
 
   // 加载设置
   useEffect(() => {
@@ -63,10 +71,13 @@ export default function SettingsPanel({
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
+        console.log('Loaded settings:', parsed);
         setSettings({ ...defaultSettings, ...parsed });
       }
     } catch (error) {
       console.error('加载设置失败:', error);
+      // 如果加载失败，使用默认设置
+      setSettings(defaultSettings);
     }
   };
 
@@ -82,6 +93,24 @@ export default function SettingsPanel({
     setHasChanges(true);
   };
 
+  // 修复标签计数
+  const handleFixTagCounts = async () => {
+    setIsFixing(true);
+    try {
+      await invoke('fix_tag_counts');
+      console.log('[SettingsPanel] 标签计数修复成功');
+      // 刷新标签列表
+      const tags = await invoke('get_all_tags');
+      useStore.getState().setTags(tags as any[]);
+      alert('标签计数已修复，请刷新页面查看');
+    } catch (error) {
+      console.error('[SettingsPanel] 修复标签计数失败:', error);
+      alert('修复失败: ' + error);
+    } finally {
+      setIsFixing(false);
+    }
+  };
+
   const handleInputChange = <K extends keyof AppSettings>(
     key: K,
     value: AppSettings[K]
@@ -90,11 +119,30 @@ export default function SettingsPanel({
     setHasChanges(true);
   };
 
-  if (!isOpen) return null;
+  if (!isOpen) {
+    console.log('[SettingsPanel] Not rendering, isOpen is false');
+    return null;
+  }
+
+  console.log('[SettingsPanel] Rendering dialog, settings:', settings);
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    console.log('[SettingsPanel] Backdrop clicked', { target: e.target, currentTarget: e.currentTarget });
+    if (e.target === e.currentTarget) {
+      console.log('[SettingsPanel] Closing dialog via backdrop click');
+      onClose();
+    }
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      onClick={handleBackdropClick}
+    >
+      <div
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* 头部 */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3">
@@ -238,10 +286,18 @@ export default function SettingsPanel({
             onClick={handleReset}
             className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg flex items-center gap-2 transition-colors"
           >
-            <RotateCw size={18} />
+            <RotateCcw size={18} />
             恢复默认
           </button>
           <div className="flex gap-3">
+            <button
+              onClick={handleFixTagCounts}
+              disabled={isFixing}
+              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
+            >
+              <Wrench size={18} />
+              {isFixing ? '修复中...' : '修复标签计数'}
+            </button>
             <button
               onClick={onClose}
               className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
