@@ -231,8 +231,13 @@ export default function FileList() {
     }
   };
 
-  const displayFiles = (searchResults?.results && searchResults.results.length > 0)
-    ? searchResults.results.map((r) => ({ ...r.file, tags: r.tags }))
+  // 计算要显示的文件列表
+  const isSearchMode = searchKeywords.length > 0;
+
+  // 当处于搜索模式时，只显示搜索结果（包括空结果）
+  // 当非搜索模式时，显示普通文件列表
+  const displayFiles = isSearchMode
+    ? (searchResults?.results || []).map((r) => ({ ...r.file, tags: r.tags }))
     : files;
 
   const totalCount = searchResults?.total ?? files.length;
@@ -367,21 +372,25 @@ export default function FileList() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {isLoading && !displayFiles.length ? (
+        {isLoading && isSearchMode && !displayFiles.length ? (
+          // 搜索加载中
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
             <RefreshCw size={32} className="mb-4 animate-spin" />
-            <p>加载中...</p>
+            <p>搜索中...</p>
           </div>
         ) : displayFiles.length === 0 ? (
+          // 空列表状态
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
             <File size={64} className="mb-4 opacity-30" />
             <p className="text-lg">暂无文件</p>
             <p className="text-sm mt-2">
-              {selectedTags.length > 0
+              {isSearchMode
+                ? '没有找到匹配的文件，请尝试其他关键词'
+                : selectedTags.length > 0
                 ? '该标签下暂无文件，请尝试其他标签或添加监控目录并扫描文件'
                 : '拖放文件到此处，或添加监控目录并扫描文件'}
             </p>
-            {selectedTags.length === 0 && (
+            {selectedTags.length === 0 && !isSearchMode && (
               <button
                 onClick={handleRefresh}
                 className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
