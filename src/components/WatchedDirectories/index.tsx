@@ -3,12 +3,19 @@
  */
 import { useState, useEffect } from 'react';
 import { FolderOpen, FolderPlus, Trash2, RefreshCw, AlertCircle, Play, CheckCircle2 } from 'lucide-react';
+import { open } from '@tauri-apps/plugin-dialog';
 import { useStore } from '../../stores/useStore';
 import { api } from '../../lib/api';
 import type { BatchScanResult } from '../../types/api';
 
+// 导入 opener 插件用于打开文件夹
+const opener = import('@tauri-apps/plugin-opener') as any;
+
+console.log('[WatchedDirectories] Component loaded');
+
 export default function WatchedDirectories() {
-  const { watchedDirectories, setWatchedDirectories, setFiles } = useStore();
+  const { watchedDirectories, setWatchedDirectories, setFiles, addNotification } = useStore();
+  console.log('[WatchedDirectories] Render called, watchedDirectories:', watchedDirectories);
   const [isScanning, setIsScanning] = useState<string | null>(null);
   const [isBatchScanning, setIsBatchScanning] = useState(false);
   const [newPath, setNewPath] = useState('');
@@ -49,7 +56,9 @@ export default function WatchedDirectories() {
     }
 
     setIsAdding(true);
+    setError(null);
     try {
+      console.log('Adding watched directory:', { path: newPath, recursive: isRecursive });
       await api.addWatchedDirectory({
         path: newPath,
         recursive: isRecursive,
@@ -57,10 +66,10 @@ export default function WatchedDirectories() {
       await loadWatchedDirectories();
       setShowDialog(false);
       setNewPath('');
-      setError(null);
+      addNotification({ type: 'success', message: '监控目录添加成功' });
     } catch (err) {
       console.error('添加目录失败:', err);
-      setError('添加目录失败，请检查路径是否有效');
+      setError(`添加目录失败: ${err}`);
     } finally {
       setIsAdding(false);
     }
@@ -136,18 +145,37 @@ export default function WatchedDirectories() {
     }
   };
 
-  const handleSelectFolder = async () => {
+  // 打开文件夹
+  const handleOpenFolder = async (path: string) => {
     try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
+      const { openPath } = await opener as any;
+      openPath(path);
+    } catch (err) {
+      console.error('打开文件夹失败:', err);
+      setError(`打开文件夹失败: ${err}`);
+    }
+  };
+
+  const handleSelectFolder = async () => {
+    console.log('=== handleSelectFolder called ===');
+    try {
+      console.log('[Dialog] Opening folder dialog...');
       const selected = await open({
         directory: true,
         multiple: false,
       });
+      console.log('[Dialog] Selected folder:', selected);
+      console.log('[Dialog] Selected type:', typeof selected);
       if (selected && typeof selected === 'string') {
         setNewPath(selected);
+        setError(null);
+        console.log('[Dialog] Path set to:', selected);
+      } else {
+        console.warn('[Dialog] No folder selected or invalid type:', selected);
       }
     } catch (err) {
-      console.error('选择文件夹失败:', err);
+      console.error('[Dialog] 选择文件夹失败:', err);
+      setError(`选择文件夹失败: ${err}`);
     }
   };
 
@@ -214,7 +242,13 @@ export default function WatchedDirectories() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <FolderOpen size={18} className="flex-shrink-0 text-blue-600" />
-                    <span className="font-medium truncate">{dir.path}</span>
+                    <button
+                      onClick={() => handleOpenFolder(dir.path)}
+                      className="font-medium truncate text-left hover:text-blue-600 hover:underline"
+                      title="点击打开文件夹"
+                    >
+                      {dir.path}
+                    </button>
                   </div>
                   <div className="flex items-center gap-4 mt-1 text-xs text-gray-500 dark:text-gray-400">
                     <span>{dir.recursive ? '递归监控' : '单层监控'}</span>
@@ -224,9 +258,12 @@ export default function WatchedDirectories() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                   <button
-                    onClick={() => handleToggleEnabled(dir.id!, dir.enabled)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleEnabled(dir.id!, dir.enabled);
+                    }}
                     className={`px-2 py-1 text-xs rounded ${
                       dir.enabled
                         ? 'bg-green-100 text-green-700 hover:bg-green-200'
@@ -238,7 +275,10 @@ export default function WatchedDirectories() {
 
                   {dir.enabled && (
                     <button
-                      onClick={() => handleScanDirectory(dir.id!, dir.path)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleScanDirectory(dir.id!, dir.path);
+                      }}
                       disabled={isScanning === dir.path}
                       className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50"
                       title="扫描目录"
@@ -251,7 +291,10 @@ export default function WatchedDirectories() {
                   )}
 
                   <button
-                    onClick={() => handleRemoveDirectory(dir.id!, dir.path)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveDirectory(dir.id!, dir.path);
+                    }}
                     className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded"
                     title="移除目录"
                   >
@@ -266,8 +309,20 @@ export default function WatchedDirectories() {
 
       {/* 添加目录对话框 */}
       {showDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowDialog(false);
+              setNewPath('');
+              setError(null);
+            }
+          }}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="text-lg font-semibold mb-4">添加监控目录</h3>
 
             <div className="space-y-4">
@@ -285,7 +340,12 @@ export default function WatchedDirectories() {
                   />
                   <button
                     type="button"
-                    onClick={handleSelectFolder}
+                    onClick={(e) => {
+                      console.log('=== Browse button clicked ===', e);
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleSelectFolder();
+                    }}
                     className="px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
                   >
                     浏览
@@ -332,8 +392,17 @@ export default function WatchedDirectories() {
 
       {/* 扫描结果对话框 */}
       {showResultDialog && scanResult && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg p-6">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={() => {
+            setShowResultDialog(false);
+            setScanResult(null);
+          }}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center gap-2 mb-4">
               {scanResult.scannedDirectories > 0 && scanResult.errors.length === 0 ? (
                 <CheckCircle2 size={24} className="text-green-600" />
