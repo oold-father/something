@@ -4,6 +4,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import type * as Api from '../types/api';
 
+console.log('[API] API client loaded');
+
 export const api = {
   // ===== 文件操作 =====
   getFiles: async (params?: { limit?: number; offset?: number }): Promise<Api.File[]> => {
@@ -36,7 +38,21 @@ export const api = {
   },
 
   createTag: async (request: Api.CreateTagRequest): Promise<number> => {
-    return invoke('create_tag', { request });
+    console.log('[API] createTag called with:', JSON.stringify(request));
+    try {
+      // 将请求对象解构为单独的参数
+      const result = await invoke('create_tag', {
+        name: request.name,
+        displayName: request.displayName,
+        color: request.color,
+        icon: request.icon,
+      });
+      console.log('[API] createTag result:', result);
+      return result as number;
+    } catch (error) {
+      console.error('[API] createTag error:', error);
+      throw error;
+    }
   },
 
   addTagToFile: async (fileId: number, tagName: string): Promise<void> => {
@@ -68,6 +84,7 @@ export const api = {
     keywords: string[],
     operator: 'AND' | 'OR',
     fileTypeFilter?: string,
+    tags?: string[],
     limit?: number,
     offset?: number
   ): Promise<Api.SearchResultResponse> => {
@@ -75,6 +92,7 @@ export const api = {
       keywords,
       operator,
       fileTypeFilter,
+      tags,
       limit: limit ?? 50,
       offset: offset ?? 0,
     });
@@ -86,7 +104,19 @@ export const api = {
   },
 
   addWatchedDirectory: async (request: Api.CreateWatchedDirectoryRequest): Promise<number> => {
-    return invoke('add_watched_directory', { request });
+    console.log('[API] addWatchedDirectory called with:', request);
+    try {
+      const result = await invoke('add_watched_directory', {
+        path: request.path,
+        recursive: request.recursive,
+        filters: request.filters,
+      });
+      console.log('[API] addWatchedDirectory result:', result);
+      return result as number;
+    } catch (error) {
+      console.error('[API] addWatchedDirectory error:', error);
+      throw error;
+    }
   },
 
   removeWatchedDirectory: async (id: number): Promise<void> => {

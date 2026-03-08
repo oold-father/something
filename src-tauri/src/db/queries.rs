@@ -1,6 +1,6 @@
 use super::models::*;
 use super::Database;
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 
@@ -34,36 +34,54 @@ impl Database {
     pub fn get_file_by_path(&self, path: &str) -> Result<Option<File>> {
         let conn = self.conn.lock();
 
+        // 使用 JOIN 查询一次性获取文件及其标签
         let mut stmt = conn.prepare(
-            "SELECT id, path, name, extension, size, file_type, created_at, modified_at, accessed_at, status, indexed_at, metadata
-             FROM files WHERE path = ?1"
+            "SELECT f.id, f.path, f.name, f.extension, f.size, f.file_type, f.created_at, f.modified_at, f.accessed_at, f.status, f.indexed_at, f.metadata,
+                    t.id as tag_id, t.name as tag_name, t.display_name as tag_display_name, t.tag_type as tag_type, t.color as tag_color, t.icon as tag_icon, t.use_count as tag_use_count, t.created_at as tag_created_at
+             FROM files f
+             LEFT JOIN file_tags ft ON f.id = ft.file_id
+             LEFT JOIN tags t ON ft.tag_id = t.id
+             WHERE f.path = ?1"
         )?;
 
         let mut rows = stmt.query(params![path])?;
 
-        if let Some(row) = rows.next()? {
-            return Ok(Some(self.row_to_file(row)?));
-        }
+        let mut file_map: std::collections::HashMap<i64, (File, Vec<Tag>)> = std::collections::HashMap::new();
+        self.collect_files_with_tags(&mut rows, &mut file_map)?;
 
-        Ok(None)
+        if file_map.is_empty() {
+            Ok(None)
+        } else {
+            let (_file, tags) = file_map.into_values().next().unwrap();
+            Ok(Some(File { tags: Some(tags), .._file }))
+        }
     }
 
     /// 根据ID获取文件
     pub fn get_file_by_id(&self, id: i64) -> Result<Option<File>> {
         let conn = self.conn.lock();
 
+        // 使用 JOIN 查询一次性获取文件及其标签
         let mut stmt = conn.prepare(
-            "SELECT id, path, name, extension, size, file_type, created_at, modified_at, accessed_at, status, indexed_at, metadata
-             FROM files WHERE id = ?1"
+            "SELECT f.id, f.path, f.name, f.extension, f.size, f.file_type, f.created_at, f.modified_at, f.accessed_at, f.status, f.indexed_at, f.metadata,
+                    t.id as tag_id, t.name as tag_name, t.display_name as tag_display_name, t.tag_type as tag_type, t.color as tag_color, t.icon as tag_icon, t.use_count as tag_use_count, t.created_at as tag_created_at
+             FROM files f
+             LEFT JOIN file_tags ft ON f.id = ft.file_id
+             LEFT JOIN tags t ON ft.tag_id = t.id
+             WHERE f.id = ?1"
         )?;
 
         let mut rows = stmt.query(params![id])?;
 
-        if let Some(row) = rows.next()? {
-            return Ok(Some(self.row_to_file(row)?));
-        }
+        let mut file_map: std::collections::HashMap<i64, (File, Vec<Tag>)> = std::collections::HashMap::new();
+        self.collect_files_with_tags(&mut rows, &mut file_map)?;
 
-        Ok(None)
+        if file_map.is_empty() {
+            Ok(None)
+        } else {
+            let (_file, tags) = file_map.into_values().next().unwrap();
+            Ok(Some(File { tags: Some(tags), .._file }))
+        }
     }
 
     /// 更新文件状态（预留功能）
@@ -92,30 +110,42 @@ impl Database {
     pub fn get_files(&self, limit: Option<i64>, offset: Option<i64>) -> Result<Vec<File>> {
         let conn = self.conn.lock();
 
+        // 使用 JOIN 查询一次性获取文件及其标签
         let sql = if limit.is_some() || offset.is_some() {
-            "SELECT id, path, name, extension, size, file_type, created_at, modified_at, accessed_at, status, indexed_at, metadata
-             FROM files WHERE status = 'active'
-             ORDER BY created_at DESC LIMIT ?1 OFFSET ?2"
+            "SELECT f.id, f.path, f.name, f.extension, f.size, f.file_type, f.created_at, f.modified_at, f.accessed_at, f.status, f.indexed_at, f.metadata,
+                    t.id as tag_id, t.name as tag_name, t.display_name as tag_display_name, t.tag_type as tag_type, t.color as tag_color, t.icon as tag_icon, t.use_count as tag_use_count, t.created_at as tag_created_at
+             FROM files f
+             LEFT JOIN file_tags ft ON f.id = ft.file_id
+             LEFT JOIN tags t ON ft.tag_id = t.id
+             WHERE f.status = 'active'
+             ORDER BY f.created_at DESC LIMIT ?1 OFFSET ?2"
         } else {
-            "SELECT id, path, name, extension, size, file_type, created_at, modified_at, accessed_at, status, indexed_at, metadata
-             FROM files WHERE status = 'active'
-             ORDER BY created_at DESC"
+            "SELECT f.id, f.path, f.name, f.extension, f.size, f.file_type, f.created_at, f.modified_at, f.accessed_at, f.status, f.indexed_at, f.metadata,
+                    t.id as tag_id, t.name as tag_name, t.display_name as tag_display_name, t.tag_type as tag_type, t.color as tag_color, t.icon as tag_icon, t.use_count as tag_use_count, t.created_at as tag_created_at
+             FROM files f
+             LEFT JOIN file_tags ft ON f.id = ft.file_id
+             LEFT JOIN tags t ON ft.tag_id = t.id
+             WHERE f.status = 'active'
+             ORDER BY f.created_at DESC"
         };
 
         let mut stmt = conn.prepare(sql)?;
 
-        let mut files = Vec::new();
+        let mut file_map: std::collections::HashMap<i64, (File, Vec<Tag>)> = std::collections::HashMap::new();
+
         if limit.is_some() || offset.is_some() {
             let mut rows = stmt.query(params![limit.unwrap_or(100), offset.unwrap_or(0)])?;
-            while let Some(row) = rows.next()? {
-                files.push(self.row_to_file(row)?);
-            }
+            self.collect_files_with_tags(&mut rows, &mut file_map)?;
         } else {
             let mut rows = stmt.query(params![])?;
-            while let Some(row) = rows.next()? {
-                files.push(self.row_to_file(row)?);
-            }
+            self.collect_files_with_tags(&mut rows, &mut file_map)?;
         }
+
+        // 转换为 Vec 并按 created_at 排序
+        let mut files: Vec<File> = file_map.into_values()
+            .map(|(file, tags)| File { tags: Some(tags), ..file })
+            .collect();
+        files.sort_by(|a, b| b.created_at.cmp(&a.created_at));
 
         Ok(files)
     }
@@ -324,10 +354,13 @@ impl Database {
 
         let placeholders = tag_names.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!(
-            "SELECT DISTINCT f.id, f.path, f.name, f.extension, f.size, f.file_type, f.created_at, f.modified_at, f.accessed_at, f.status, f.indexed_at, f.metadata
+            "SELECT DISTINCT f.id, f.path, f.name, f.extension, f.size, f.file_type, f.created_at, f.modified_at, f.accessed_at, f.status, f.indexed_at, f.metadata,
+                    t.id as tag_id, t.name as tag_name, t.display_name as tag_display_name, t.tag_type as tag_type, t.color as tag_color, t.icon as tag_icon, t.use_count as tag_use_count, t.created_at as tag_created_at
              FROM files f
              JOIN file_tags ft ON f.id = ft.file_id
              JOIN tags t ON ft.tag_id = t.id
+             LEFT JOIN file_tags ft2 ON f.id = ft2.file_id
+             LEFT JOIN tags t2 ON ft2.tag_id = t2.id
              WHERE t.name IN ({}) AND f.status = 'active'
              ORDER BY f.created_at DESC",
             placeholders
@@ -338,11 +371,15 @@ impl Database {
         // 使用 rusqlite 的 params_from_iter
         let params: Vec<&dyn rusqlite::ToSql> = tag_names.iter().map(|n| n as &dyn rusqlite::ToSql).collect();
 
-        let mut files = Vec::new();
+        let mut file_map: std::collections::HashMap<i64, (File, Vec<Tag>)> = std::collections::HashMap::new();
         let mut rows = stmt.query(params.as_slice())?;
-        while let Some(row) = rows.next()? {
-            files.push(self.row_to_file(row)?);
-        }
+        self.collect_files_with_tags(&mut rows, &mut file_map)?;
+
+        // 转换为 Vec 并按 created_at 排序
+        let mut files: Vec<File> = file_map.into_values()
+            .map(|(file, tags)| File { tags: Some(tags), ..file })
+            .collect();
+        files.sort_by(|a, b| b.created_at.cmp(&a.created_at));
 
         Ok(files)
     }
@@ -385,16 +422,22 @@ impl Database {
             let filters_raw: Option<String> = row.get(3)?;
             let filters: Option<serde_json::Value> = filters_raw.and_then(|f| serde_json::from_str(&f).ok());
 
+            let created_at_ts: i64 = row.get(5)?;
+            let created_at = DateTime::from_timestamp(created_at_ts, 0)
+                .ok_or_else(|| AppError::Unknown(format!("无效的 created_at 时间戳: {}", created_at_ts)))?;
+
+            let last_scanned_at: Option<DateTime<Utc>> = row
+                .get::<_, Option<i64>>(6)?
+                .and_then(|t| DateTime::from_timestamp(t, 0));
+
             dirs.push(WatchedDirectory {
                 id: Some(row.get(0)?),
                 path: row.get(1)?,
                 recursive: row.get::<_, i32>(2)? != 0,
                 filters,
                 enabled: row.get::<_, i32>(4)? != 0,
-                created_at: DateTime::from_timestamp(row.get(5)?, 0).unwrap(),
-                last_scanned_at: row
-                    .get::<_, Option<i64>>(6)?
-                    .map(|t| DateTime::from_timestamp(t, 0).unwrap()),
+                created_at,
+                last_scanned_at,
             });
         }
 
@@ -466,6 +509,18 @@ impl Database {
         // 检测关键字是否包含中文
         let has_chinese = query.keywords.iter().any(|k| self.contains_chinese(k));
 
+        // 构建标签过滤子句
+        let tag_filter = if let Some(ref tags) = query.tags {
+            if !tags.is_empty() {
+                let placeholders = tags.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+                Some(format!("EXISTS (SELECT 1 FROM file_tags ft JOIN tags t ON ft.tag_id = t.id WHERE ft.file_id = f.id AND t.name IN ({}))", placeholders))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let mut results = Vec::new();
         let total: i64;
 
@@ -494,11 +549,24 @@ impl Database {
                 sql.push_str(&format!(" AND f.file_type = '{}'", file_type.to_string()));
             }
 
+            // 添加标签过滤
+            if let Some(ref tag_filter) = tag_filter {
+                sql.push_str(&format!(" AND {}", tag_filter));
+            }
+
             sql.push_str(&format!(" ORDER BY f.created_at DESC LIMIT {} OFFSET {}",
                 query.limit, query.offset));
 
             let mut stmt = conn.prepare(&sql)?;
-            let mut rows = stmt.query([])?;
+
+            // 准备查询参数
+            let mut query_params: Vec<&dyn rusqlite::ToSql> = Vec::new();
+            if let Some(ref tags) = query.tags {
+                for tag in tags {
+                    query_params.push(tag);
+                }
+            }
+            let mut rows = stmt.query(query_params.as_slice())?;
 
             while let Some(row) = rows.next()? {
                 let file = self.row_to_file(row)?;
@@ -520,7 +588,17 @@ impl Database {
                  WHERE ({}) AND f.status = 'active'",
                 like_clause
             );
-            total = conn.query_row(&count_sql, [], |row| row.get(0))?;
+
+            // 在总数查询中也添加标签过滤
+            let mut count_sql_with_filters = count_sql;
+            if let Some(file_type) = &query.file_type_filter {
+                count_sql_with_filters.push_str(&format!(" AND f.file_type = '{}'", file_type.to_string()));
+            }
+            if let Some(ref tag_filter) = tag_filter {
+                count_sql_with_filters.push_str(&format!(" AND {}", tag_filter));
+            }
+
+            total = conn.query_row(&count_sql_with_filters, query_params.as_slice(), |row| row.get(0))?;
 
         } else {
             // 英文/数字搜索：使用 FTS 全文搜索
@@ -538,14 +616,28 @@ impl Database {
                 sql.push_str(&format!(" AND f.file_type = '{}'", file_type.to_string()));
             }
 
+            // 添加标签过滤
+            if let Some(ref tag_filter) = tag_filter {
+                sql.push_str(&format!(" AND {}", tag_filter));
+            }
+
             sql.push_str(" ORDER BY bm25(file_tags_content) DESC, f.created_at DESC LIMIT ?2 OFFSET ?3");
 
             let mut stmt = conn.prepare(&sql)?;
-            let mut rows = stmt.query(params![
-                fts_query,
-                query.limit as i64,
-                query.offset as i64
-            ])?;
+
+            // 准备查询参数
+            let limit_i64 = query.limit as i64;
+            let offset_i64 = query.offset as i64;
+            let mut query_params: Vec<&dyn rusqlite::ToSql> = vec![&fts_query];
+            if let Some(ref tags) = query.tags {
+                for tag in tags {
+                    query_params.push(tag);
+                }
+            }
+            query_params.push(&limit_i64);
+            query_params.push(&offset_i64);
+
+            let mut rows = stmt.query(query_params.as_slice())?;
 
             while let Some(row) = rows.next()? {
                 let file = self.row_to_file(row)?;
@@ -561,14 +653,30 @@ impl Database {
             }
 
             // 获取总数
-            total = conn.query_row(
+            let mut count_sql = String::from(
                 "SELECT COUNT(DISTINCT f.id)
                  FROM files f
                  JOIN file_tags_content ON f.id = file_tags_content.file_id
-                 WHERE file_tags_content MATCH ?1 AND f.status = 'active'",
-                params![fts_query],
-                |row| row.get(0),
-            )?;
+                 WHERE file_tags_content MATCH ?1 AND f.status = 'active'"
+            );
+
+            // 在总数查询中也添加文件类型和标签过滤
+            if let Some(file_type) = &query.file_type_filter {
+                count_sql.push_str(&format!(" AND f.file_type = '{}'", file_type.to_string()));
+            }
+            if let Some(ref tag_filter) = tag_filter {
+                count_sql.push_str(&format!(" AND {}", tag_filter));
+            }
+
+            // 准备总数查询参数
+            let mut count_params: Vec<&dyn rusqlite::ToSql> = vec![&fts_query];
+            if let Some(ref tags) = query.tags {
+                for tag in tags {
+                    count_params.push(tag);
+                }
+            }
+
+            total = conn.query_row(&count_sql, count_params.as_slice(), |row| row.get(0))?;
         }
 
         Ok(SearchResultResponse {
@@ -615,6 +723,9 @@ impl Database {
             while let Some(row) = rows.next()? {
                 let tag_type_str: String = row.get(3)?;
                 let tag_type = TagType::from_str(&tag_type_str);
+                let created_at_ts: i64 = row.get(7)?;
+                let created_at = DateTime::from_timestamp(created_at_ts, 0)
+                    .ok_or_else(|| AppError::Unknown(format!("无效的 created_at 时间戳: {}", created_at_ts)))?;
                 tags.push(Tag {
                     id: Some(row.get(0)?),
                     name: row.get(1)?,
@@ -623,7 +734,7 @@ impl Database {
                     color: row.get(4)?,
                     icon: row.get(5)?,
                     use_count: row.get(6)?,
-                    created_at: DateTime::from_timestamp(row.get(7)?, 0).unwrap(),
+                    created_at,
                 });
             }
             Ok(tags)
@@ -664,6 +775,20 @@ impl Database {
         let status_str: String = row.get(9)?;
         let status = FileStatus::from_str(&status_str);
 
+        let created_at_ts: i64 = row.get(6)?;
+        let modified_at_ts: i64 = row.get(7)?;
+        let accessed_at_ts: i64 = row.get(8)?;
+        let indexed_at_ts: i64 = row.get(10)?;
+
+        let created_at = DateTime::from_timestamp(created_at_ts, 0)
+            .ok_or_else(|| AppError::Unknown(format!("无效的 created_at 时间戳: {}", created_at_ts)))?;
+        let modified_at = DateTime::from_timestamp(modified_at_ts, 0)
+            .ok_or_else(|| AppError::Unknown(format!("无效的 modified_at 时间戳: {}", modified_at_ts)))?;
+        let accessed_at = DateTime::from_timestamp(accessed_at_ts, 0)
+            .ok_or_else(|| AppError::Unknown(format!("无效的 accessed_at 时间戳: {}", accessed_at_ts)))?;
+        let indexed_at = DateTime::from_timestamp(indexed_at_ts, 0)
+            .ok_or_else(|| AppError::Unknown(format!("无效的 indexed_at 时间戳: {}", indexed_at_ts)))?;
+
         let metadata: Option<String> = row.get(11)?;
         let metadata = metadata.and_then(|m| serde_json::from_str(&m).ok());
 
@@ -674,12 +799,13 @@ impl Database {
             extension: row.get(3)?,
             size: row.get(4)?,
             file_type,
-            created_at: DateTime::from_timestamp(row.get(6)?, 0).unwrap(),
-            modified_at: DateTime::from_timestamp(row.get(7)?, 0).unwrap(),
-            accessed_at: DateTime::from_timestamp(row.get(8)?, 0).unwrap(),
+            created_at,
+            modified_at,
+            accessed_at,
             status,
-            indexed_at: DateTime::from_timestamp(row.get(10)?, 0).unwrap(),
+            indexed_at,
             metadata,
+            tags: None,
         })
     }
 
@@ -687,6 +813,9 @@ impl Database {
     fn row_to_tag(&self, row: &rusqlite::Row) -> Result<Tag> {
         let tag_type_str: String = row.get(3)?;
         let tag_type = TagType::from_str(&tag_type_str);
+        let created_at_ts: i64 = row.get(7)?;
+        let created_at = DateTime::from_timestamp(created_at_ts, 0)
+            .ok_or_else(|| AppError::Unknown(format!("无效的时间戳: {}", created_at_ts)))?;
 
         Ok(Tag {
             id: Some(row.get(0)?),
@@ -696,7 +825,94 @@ impl Database {
             color: row.get(4)?,
             icon: row.get(5)?,
             use_count: row.get(6)?,
-            created_at: DateTime::from_timestamp(row.get(7)?, 0).unwrap(),
+            created_at,
         })
+    }
+
+    /// 从 JOIN 查询结果中收集文件及其标签（避免重复获取锁导致死锁）
+    fn collect_files_with_tags(
+        &self,
+        rows: &mut rusqlite::Rows<'_>,
+        file_map: &mut std::collections::HashMap<i64, (File, Vec<Tag>)>,
+    ) -> Result<()> {
+        while let Some(row) = rows.next()? {
+            // 检查 file_id 是否存在（LEFT JOIN 可能为 NULL）
+            let file_id_opt: Option<i64> = row.get(0)?;
+            if file_id_opt.is_none() {
+                continue;
+            }
+            let file_id = file_id_opt.unwrap();
+
+            // 检查 tag_id 是否存在（文件可能没有标签）
+            let tag_id_opt: Option<i64> = row.get(12)?;
+
+            // 如果文件不在 map 中，先添加文件
+            if !file_map.contains_key(&file_id) {
+                // 文件字段索引: id(0), path(1), name(2), extension(3), size(4), file_type(5),
+                //              created_at(6), modified_at(7), accessed_at(8), status(9), indexed_at(10), metadata(11)
+                let file_type_str: String = row.get(5)?;
+                let file_type = FileType::from_extension(&file_type_str);
+
+                let status_str: String = row.get(9)?;
+                let status = FileStatus::from_str(&status_str);
+
+                let created_at_ts: i64 = row.get(6)?;
+                let modified_at_ts: i64 = row.get(7)?;
+                let accessed_at_ts: i64 = row.get(8)?;
+                let indexed_at_ts: i64 = row.get(10)?;
+
+                let created_at = DateTime::from_timestamp(created_at_ts, 0)
+                    .ok_or_else(|| AppError::Unknown(format!("无效的 created_at 时间戳: {}", created_at_ts)))?;
+                let modified_at = DateTime::from_timestamp(modified_at_ts, 0)
+                    .ok_or_else(|| AppError::Unknown(format!("无效的 modified_at 时间戳: {}", modified_at_ts)))?;
+                let accessed_at = DateTime::from_timestamp(accessed_at_ts, 0)
+                    .ok_or_else(|| AppError::Unknown(format!("无效的 accessed_at 时间戳: {}", accessed_at_ts)))?;
+                let indexed_at = DateTime::from_timestamp(indexed_at_ts, 0)
+                    .ok_or_else(|| AppError::Unknown(format!("无效的 indexed_at 时间戳: {}", indexed_at_ts)))?;
+
+                let metadata: Option<String> = row.get(11)?;
+                let metadata = metadata.and_then(|m| serde_json::from_str(&m).ok());
+
+                let file = File {
+                    id: Some(file_id),
+                    path: row.get(1)?,
+                    name: row.get(2)?,
+                    extension: row.get(3)?,
+                    size: row.get(4)?,
+                    file_type,
+                    created_at,
+                    modified_at,
+                    accessed_at,
+                    status,
+                    indexed_at,
+                    metadata,
+                    tags: None,
+                };
+                file_map.insert(file_id, (file, Vec::new()));
+            }
+
+            // 如果有标签，添加到标签列表
+            if let Some(_tag_id) = tag_id_opt {
+                // 标签字段索引: tag_id(12), tag_name(13), tag_display_name(14), tag_type(15), tag_color(16), tag_icon(17), tag_use_count(18), tag_created_at(19)
+                let tag_type_str: String = row.get(15)?;
+                let tag_type = TagType::from_str(&tag_type_str);
+                let tag_created_at_ts: i64 = row.get(19)?;
+                let tag_created_at = DateTime::from_timestamp(tag_created_at_ts, 0)
+                    .ok_or_else(|| AppError::Unknown(format!("无效的 tag_created_at 时间戳: {}", tag_created_at_ts)))?;
+
+                let tag = Tag {
+                    id: tag_id_opt,
+                    name: row.get(13)?,
+                    display_name: row.get(14)?,
+                    tag_type,
+                    color: row.get(16)?,
+                    icon: row.get(17)?,
+                    use_count: row.get(18)?,
+                    created_at: tag_created_at,
+                };
+                file_map.get_mut(&file_id).unwrap().1.push(tag);
+            }
+        }
+        Ok(())
     }
 }

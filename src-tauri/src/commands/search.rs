@@ -6,6 +6,7 @@ pub fn search_files(
     keywords: Vec<String>,
     operator: String,
     file_type_filter: Option<String>,
+    tags: Option<Vec<String>>,
     limit: usize,
     offset: usize,
     state: tauri::State<Database>,
@@ -25,6 +26,7 @@ pub fn search_files(
         keywords,
         operator: op,
         file_type_filter: ft,
+        tags,
         limit,
         offset,
     };

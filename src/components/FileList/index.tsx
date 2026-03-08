@@ -2,20 +2,23 @@
  * 文件列表组件
  */
 import { useEffect, useState, useRef } from 'react';
-import { File, Calendar, HardDrive, RefreshCw, Download, Upload } from 'lucide-react';
+import { File, Calendar, HardDrive, RefreshCw, Download, MoreHorizontal, Tag, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatFileSize, formatDate, getFileIcon } from '../../lib/utils';
 import { useStore } from '../../stores/useStore';
 import type { File as FileType } from '../../types/api';
+import AddTagModal from '../AddTagModal';
 
 export default function FileList() {
   const files = useStore((s) => s.files);
   const setFiles = useStore((s) => s.setFiles);
   const searchResults = useStore((s) => s.searchResults);
+  const searchKeywords = useStore((s) => s.searchKeywords);
   const isLoading = useStore((s) => s.isLoading);
   const setIsLoading = useStore((s) => s.setIsLoading);
   const selectedTags = useStore((s) => s.selectedTags);
   const addNotification = useStore((s) => s.addNotification);
+  const filesRevision = useStore((s) => s.filesRevision);
 
   const [loadingMore, setLoadingMore] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -23,6 +26,23 @@ export default function FileList() {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const dragCounter = useRef(0);
+
+  // 多选文件状态
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<number | string>>(new Set());
+  const [showAddTagModal, setShowAddTagModal] = useState(false);
+
+  // 右键菜单状态
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    file: FileType | null;
+  }>({
+    visible: false,
+    x: 0,
+    y: 0,
+    file: null,
+  });
 
   const hasMore = files.length > 0 && files.length % 50 === 0;
 
@@ -32,12 +52,39 @@ export default function FileList() {
 
   useEffect(() => {
     // 当选择的标签变化时，重新加载文件
-    if (selectedTags.length > 0) {
-      loadFilesByTags();
-    } else {
-      loadFiles();
+    // 如果有搜索关键字，搜索会在 App.tsx 中自动重新执行，不需要这里处理
+    if (searchKeywords.length === 0) {
+      if (selectedTags.length > 0) {
+        loadFilesByTags();
+      } else {
+        loadFiles();
+      }
     }
-  }, [selectedTags]);
+  }, [selectedTags, searchKeywords]);
+
+  // 当 filesRevision 变化时刷新文件列表
+  useEffect(() => {
+    if (filesRevision > 0 && searchKeywords.length === 0) {
+      if (selectedTags.length > 0) {
+        loadFilesByTags();
+      } else {
+        loadFiles();
+      }
+    }
+  }, [filesRevision, searchKeywords]);
+
+  // 点击外部关闭右键菜单
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (contextMenu.visible) {
+        setContextMenu({ ...contextMenu, visible: false });
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [contextMenu.visible]);
 
   const loadFiles = async (offset = 0, silent = false) => {
     if (!silent) setIsLoading(true);
@@ -150,26 +197,10 @@ export default function FileList() {
       // 处理每个文件
       for (const file of files) {
         try {
-          // 使用 Tauri 的 API 获取文件路径
-          const { readBinaryFile } = await import('@tauri-apps/plugin-fs') as any;
-          // 注意：这里需要根据实际的 Tauri API 调整
-          // 目前这是一个示例实现
-
           // 暂时使用文件名作为路径（实际应用中需要获取完整路径）
           const filePath = file.name;
-
           // 调用 API 添加文件
-          await api.addFile({
-            path: filePath,
-            name: file.name,
-            extension: file.name.split('.').pop() || '',
-            size: file.size,
-            fileType: getFileType(file.name),
-            createdAt: new Date().toISOString(),
-            modifiedAt: new Date(file.lastModified).toISOString(),
-            status: 'active',
-          });
-
+          await api.addFile(filePath);
           successCount++;
         } catch (error) {
           console.error(`添加文件 ${file.name} 失败:`, error);
@@ -200,25 +231,94 @@ export default function FileList() {
     }
   };
 
-  const getFileType = (filename: string): FileType['fileType'] => {
-    const ext = filename.split('.').pop()?.toLowerCase() || '';
-    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'ico'];
-    const audioExts = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma'];
-    const videoExts = ['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm'];
-    const textExts = ['txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'py', 'java', 'cpp', 'c'];
-
-    if (imageExts.includes(ext)) return 'image';
-    if (audioExts.includes(ext)) return 'audio';
-    if (videoExts.includes(ext)) return 'video';
-    if (textExts.includes(ext)) return 'text';
-    return 'other';
-  };
-
   const displayFiles = (searchResults?.results && searchResults.results.length > 0)
     ? searchResults.results.map((r) => ({ ...r.file, tags: r.tags }))
     : files;
 
   const totalCount = searchResults?.total ?? files.length;
+
+  // 右键菜单处理
+  const handleContextMenu = (e: React.MouseEvent, file: FileType) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // 获取鼠标点击位置
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      file: file,
+    });
+  };
+
+  // 处理文件选择
+  const handleSelectFile = (fileId: number | string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setSelectedFileIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(fileId)) {
+        newSet.delete(fileId);
+      } else {
+        newSet.add(fileId);
+      }
+      return newSet;
+    });
+  };
+
+  // 清空多选
+  const clearSelection = () => {
+    setSelectedFileIds(new Set());
+  };
+
+  const handleContextMenuItem = async (action: string, file: FileType) => {
+    setContextMenu({ ...contextMenu, visible: false });
+
+    switch (action) {
+      case 'open':
+        await handleFileClick(file);
+        break;
+      case 'delete':
+        try {
+          if (file.id) {
+            await api.deleteFile(file.id);
+            addNotification({ type: 'success', message: `已删除 ${file.name}` });
+            // 刷新文件列表
+            await loadFiles();
+          }
+        } catch (error) {
+          console.error('删除文件失败:', error);
+          addNotification({ type: 'error', message: '删除文件失败' });
+        }
+        break;
+      case 'addTag':
+        // 显示添加标签对话框
+        setShowAddTagModal(true);
+        break;
+      default:
+        console.log('其他功能待实现:', action);
+    }
+  };
+
+  // 点击外部关闭右键菜单
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (contextMenu.visible) {
+        setContextMenu({ ...contextMenu, visible: false });
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [contextMenu.visible]);
+
+  console.log('[FileList] Render state:', {
+    filesLength: files.length,
+    files,
+    searchResults,
+    displayFilesLength: displayFiles.length,
+    displayFiles
+  });
 
   return (
     <div
@@ -232,7 +332,7 @@ export default function FileList() {
       {isDragging && (
         <div className="absolute inset-0 bg-blue-500/10 border-4 border-dashed border-blue-500 rounded-lg z-10 flex items-center justify-center">
           <div className="text-center">
-            <Upload size={64} className="mx-auto mb-4 text-blue-500" />
+            <Download size={64} className="mx-auto mb-4 text-blue-500" />
             <p className="text-xl font-semibold text-blue-600">拖放文件到此处</p>
             <p className="text-sm text-gray-600 mt-2">释放鼠标添加文件到索引</p>
           </div>
@@ -278,7 +378,7 @@ export default function FileList() {
             <p className="text-lg">暂无文件</p>
             <p className="text-sm mt-2">
               {selectedTags.length > 0
-                ? '该标签下暂无文件，请尝试其他标签或添加监控目录'
+                ? '该标签下暂无文件，请尝试其他标签或添加监控目录并扫描文件'
                 : '拖放文件到此处，或添加监控目录并扫描文件'}
             </p>
             {selectedTags.length === 0 && (
@@ -298,6 +398,9 @@ export default function FileList() {
                 key={file.id || file.path}
                 file={file as any}
                 onClick={() => handleFileClick(file as any)}
+                onContextMenu={(e) => handleContextMenu(e, file as any)}
+                isSelected={file.id ? selectedFileIds.has(file.id) : false}
+                onSelect={(e) => file.id && handleSelectFile(file.id, e)}
               />
             ))}
           </ul>
@@ -315,18 +418,104 @@ export default function FileList() {
           </button>
         </div>
       )}
+
+      {/* 右键菜单 */}
+      {contextMenu.visible && contextMenu.file && (
+        <div
+          className="fixed z-50 min-w-48 bg-card border border-border rounded-lg shadow-lg py-1"
+          style={{
+            left: `${contextMenu.x}px`,
+            top: `${contextMenu.y}px`,
+          }}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <div
+            className="px-3 py-2 hover:bg-muted cursor-pointer transition-colors"
+            onClick={() => contextMenu.file ? handleContextMenuItem('open', contextMenu.file) : undefined}
+          >
+            <div className="flex items-center gap-2">
+              <Download size={16} />
+              <span className="text-sm">打开文件所在目录</span>
+            </div>
+          </div>
+          <div
+            className="px-3 py-2 hover:bg-muted cursor-pointer transition-colors"
+            onClick={() => contextMenu.file ? handleContextMenuItem('addTag', contextMenu.file) : undefined}
+          >
+            <div className="flex items-center gap-2">
+              <Tag size={16} />
+              <span className="text-sm">添加标签{selectedFileIds.size > 1 ? ` (${selectedFileIds.size})` : ''}</span>
+            </div>
+          </div>
+          <div
+            className="px-3 py-2 hover:bg-muted cursor-pointer transition-colors"
+            onClick={() => contextMenu.file ? handleContextMenuItem('delete', contextMenu.file) : undefined}
+          >
+            <div className="flex items-center gap-2">
+              <Trash2 size={16} />
+              <span className="text-sm">删除文件</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 px-3 py-2 text-xs text-muted-foreground">
+            <span>更多功能开发中...</span>
+            <MoreHorizontal size={16} />
+          </div>
+        </div>
+      )}
+
+      {/* 添加标签对话框 */}
+      <AddTagModal
+        isOpen={showAddTagModal}
+        onClose={() => {
+          setShowAddTagModal(false);
+          clearSelection();
+        }}
+        onSuccess={async () => {
+          // 成功添加标签后刷新文件列表
+          if (selectedTags.length > 0) {
+            await loadFilesByTags();
+          } else {
+            await loadFiles();
+          }
+        }}
+        selectedFiles={selectedFileIds.size > 0
+          ? displayFiles.filter(f => f.id && selectedFileIds.has(f.id))
+          : (contextMenu.file ? [contextMenu.file] : [])}
+      />
     </div>
   );
 }
 
-function FileItem({ file, onClick }: { file: FileType & { tags?: any[] }; onClick: () => void }) {
+function FileItem({ file, onClick, onContextMenu, isSelected, onSelect }: {
+  file: FileType & { tags?: any[] };
+  onClick: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  isSelected: boolean;
+  onSelect: (e: React.MouseEvent) => void;
+}) {
   const icon = getFileIcon(file.extension);
 
   return (
     <li
       onClick={onClick}
-      className="flex items-center gap-4 p-4 hover:bg-muted/50 cursor-pointer transition-colors group"
+      onContextMenu={onContextMenu}
+      className={`flex items-center gap-4 p-4 hover:bg-muted/50 cursor-pointer transition-colors group ${isSelected ? 'bg-muted' : ''}`}
+      role="listitem"
     >
+      <div
+        onClick={onSelect}
+        className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+          isSelected
+            ? 'bg-primary border-primary'
+            : 'border-border hover:border-primary'
+        }`}
+      >
+        {isSelected && (
+          <svg className="w-3 h-3 text-primary-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+            <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </div>
       <div className="text-2xl group-hover:scale-110 transition-transform">{icon}</div>
       <div className="flex-1 min-w-0">
         <div className="font-medium truncate">{file.name}</div>
@@ -343,7 +532,7 @@ function FileItem({ file, onClick }: { file: FileType & { tags?: any[] }; onClic
         </div>
         {file.tags && file.tags.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-2">
-            {file.tags.slice(0, 3).map((tag) => (
+            {file.tags.slice(0, 3).map((tag: any) => (
               <span
                 key={tag.id || tag.name}
                 className="text-xs px-2 py-0.5 rounded-full text-white"

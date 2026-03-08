@@ -12,8 +12,12 @@ import { api } from './lib/api';
 export default function App() {
   const [activeTab, setActiveTab] = useState<'tags' | 'directories'>('tags');
   const [showSettings, setShowSettings] = useState(false);
+
+  console.log('[App] Rendered, showSettings:', showSettings);
+
   const searchKeywords = useStore((s) => s.searchKeywords);
   const searchOperator = useStore((s) => s.searchOperator);
+  const selectedTags = useStore((s) => s.selectedTags);
   const setSearchResults = useStore((s) => s.setSearchResults);
   const setIsLoading = useStore((s) => s.setIsLoading);
   const setStats = useStore((s) => s.setStats);
@@ -26,13 +30,37 @@ export default function App() {
     loadInitialData();
   }, []);
 
+  // 禁用默认右键菜单（除文件列表外）
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => {
+      // 检查点击目标是否在文件列表区域内
+      const target = e.target as HTMLElement;
+      const fileListElement = target.closest('[role="listitem"]');
+
+      // 只有在文件列表项上才允许右键
+      if (fileListElement) {
+        // 允许右键，不阻止默认行为
+        return;
+      }
+
+      // 其他位置阻止右键菜单
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    document.addEventListener('contextmenu', handleContextMenu as EventListener, false);
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu as EventListener);
+    };
+  }, []);
+
   useEffect(() => {
     if (searchKeywords.length > 0) {
       performSearch();
     } else {
       setSearchResults(null);
     }
-  }, [searchKeywords, searchOperator]);
+  }, [searchKeywords, searchOperator, selectedTags]);
 
   const loadInitialData = async () => {
     try {
@@ -53,6 +81,7 @@ export default function App() {
         searchKeywords,
         searchOperator,
         undefined,
+        selectedTags.length > 0 ? selectedTags : undefined,
         50,
         0
       );
@@ -95,7 +124,6 @@ export default function App() {
             监控目录
           </button>
         </div>
-
         {/* 内容区域 */}
         <div className="flex-1 overflow-y-auto">
           {activeTab === 'tags' ? <TagPanel /> : <WatchedDirectories />}
@@ -118,7 +146,10 @@ export default function App() {
               {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
             </button>
             <button
-              onClick={() => setShowSettings(true)}
+              onClick={() => {
+                console.log('[App] Settings button clicked');
+                setShowSettings(true);
+              }}
               className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
               title="设置"
             >
