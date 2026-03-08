@@ -250,17 +250,20 @@ impl Database {
         let conn = self.conn.lock();
         let now = Utc::now().timestamp();
 
-        conn.execute(
-            "INSERT OR REPLACE INTO file_tags (file_id, tag_id, is_auto, created_at)
+        // 使用 INSERT OR IGNORE 避免重复添加时重复递增计数
+        let rows_affected = conn.execute(
+            "INSERT OR IGNORE INTO file_tags (file_id, tag_id, is_auto, created_at)
              VALUES (?1, ?2, ?3, ?4)",
             params![file_id, tag_id, is_auto as i32, now],
         )?;
 
-        // 更新标签使用计数
-        conn.execute(
-            "UPDATE tags SET use_count = use_count + 1 WHERE id = ?1",
-            params![tag_id],
-        )?;
+        // 仅当成功插入新记录时才更新标签使用计数
+        if rows_affected > 0 {
+            conn.execute(
+                "UPDATE tags SET use_count = use_count + 1 WHERE id = ?1",
+                params![tag_id],
+            )?;
+        }
 
         Ok(())
     }
