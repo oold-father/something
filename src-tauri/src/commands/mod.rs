@@ -41,6 +41,7 @@ pub fn register_commands(db: Database) -> tauri::Builder<tauri::Wry> {
             add_file,
             delete_file,
             get_stats,
+            fix_tag_counts,
 
             // 监控目录相关
             get_watched_directories,

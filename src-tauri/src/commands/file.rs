@@ -86,6 +86,7 @@ pub fn add_file(
         status: FileStatus::Active,
         indexed_at: chrono::Utc::now(),
         metadata: None,
+        tags: None,
     };
 
     state.create_file(&file).map_err(|e| e.to_string())
@@ -106,4 +107,12 @@ pub fn get_stats(
     state: tauri::State<Database>,
 ) -> std::result::Result<SystemStats, String> {
     state.get_stats().map_err(|e| e.to_string())
+}
+
+/// 修复标签使用计数
+#[tauri::command]
+pub fn fix_tag_counts(
+    state: tauri::State<Database>,
+) -> std::result::Result<(), String> {
+    state.recalculate_tag_counts().map_err(|e| e.to_string())
 }

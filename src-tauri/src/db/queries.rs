@@ -250,6 +250,8 @@ impl Database {
         let conn = self.conn.lock();
         let now = Utc::now().timestamp();
 
+        println!("[DEBUG] add_tag_to_file: file_id={}, tag_id={}, is_auto={}", file_id, tag_id, is_auto);
+
         // 使用 INSERT OR IGNORE 避免重复添加时重复递增计数
         let rows_affected = conn.execute(
             "INSERT OR IGNORE INTO file_tags (file_id, tag_id, is_auto, created_at)
@@ -257,12 +259,17 @@ impl Database {
             params![file_id, tag_id, is_auto as i32, now],
         )?;
 
+        println!("[DEBUG] INSERT OR IGNORE rows_affected: {}", rows_affected);
+
         // 仅当成功插入新记录时才更新标签使用计数
         if rows_affected > 0 {
             conn.execute(
                 "UPDATE tags SET use_count = use_count + 1 WHERE id = ?1",
                 params![tag_id],
             )?;
+            println!("[DEBUG] Updated use_count for tag_id: {}", tag_id);
+        } else {
+            println!("[DEBUG] Skipping use_count update (duplicate)");
         }
 
         Ok(())
@@ -332,16 +339,25 @@ impl Database {
                     |row| row.get::<_, i64>(0),
                 ).optional()? {
                     let now = Utc::now().timestamp();
-                    tx.execute(
-                        "INSERT OR REPLACE INTO file_tags (file_id, tag_id, is_auto, created_at)
+                    // 使用 INSERT OR IGNORE 避免重复添加时重复递增计数
+                    let rows_affected = tx.execute(
+                        "INSERT OR IGNORE INTO file_tags (file_id, tag_id, is_auto, created_at)
                          VALUES (?1, ?2, 0, ?3)",
                         params![file_id, tag, now],
                     )?;
 
-                    tx.execute(
-                        "UPDATE tags SET use_count = use_count + 1 WHERE id = ?1",
-                        params![tag],
-                    )?;
+                    println!("[DEBUG] batch_add_tags: file_id={}, tag={}, rows_affected={}", file_id, tag_name, rows_affected);
+
+                    // 仅当成功插入新记录时才更新标签使用计数
+                    if rows_affected > 0 {
+                        tx.execute(
+                            "UPDATE tags SET use_count = use_count + 1 WHERE id = ?1",
+                            params![tag],
+                        )?;
+                        println!("[DEBUG] Updated use_count for tag_id: {}", tag);
+                    } else {
+                        println!("[DEBUG] Skipping use_count update (duplicate)");
+                    }
                 }
             }
         }
@@ -916,6 +932,44 @@ impl Database {
                 file_map.get_mut(&file_id).unwrap().1.push(tag);
             }
         }
+        Ok(())
+    }
+
+    /// 重新计算所有标签的使用计数
+    /// 基于 file_tags 表的实际数据修正 use_count
+    pub fn recalculate_tag_counts(&self) -> Result<()> {
+        let conn = self.conn.lock();
+
+        println!("[DEBUG] 开始重新计算标签使用计数...");
+
+        // 先重置所有标签的 use_count 为 0
+        conn.execute("UPDATE tags SET use_count = 0", [])?;
+
+        // 统计每个标签的实际使用次数
+        let mut stmt = conn.prepare(
+            "SELECT tag_id, COUNT(*) as count FROM file_tags GROUP BY tag_id"
+        )?;
+
+        let mut rows = stmt.query([])?;
+        let mut tag_counts: Vec<(i64, i64)> = Vec::new();
+
+        while let Some(row) = rows.next()? {
+            let tag_id: i64 = row.get(0)?;
+            let count: i64 = row.get(1)?;
+            tag_counts.push((tag_id, count));
+        }
+
+        // 更新每个标签的 use_count
+        for i in 0..tag_counts.len() {
+            let (tag_id, count) = tag_counts[i];
+            conn.execute(
+                "UPDATE tags SET use_count = ?1 WHERE id = ?2",
+                params![count, tag_id],
+            )?;
+        }
+
+        println!("[DEBUG] 重新计算完成，更新了 {} 个标签", tag_counts.len());
+
         Ok(())
     }
 }
