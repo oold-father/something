@@ -1,4 +1,4 @@
-use crate::db::{Database, WatchedDirectory, CreateWatchedDirectoryRequest};
+use crate::db::{Database, WatchedDirectory};
 use crate::watcher::{DirectoryScanner, ScanConfig, ScanResult, ScanError};
 use rusqlite::Error;
 use std::path::PathBuf;
@@ -14,18 +14,36 @@ pub fn get_watched_directories(
 /// 添加监控目录
 #[tauri::command]
 pub fn add_watched_directory(
-    request: CreateWatchedDirectoryRequest,
+    path: String,
+    recursive: bool,
+    #[allow(dead_code)] filters: Option<serde_json::Value>,
     state: tauri::State<Database>,
 ) -> std::result::Result<i64, String> {
+    println!("[Rust] add_watched_directory called with: path={}, recursive={}", path, recursive);
+
+    let path_obj = std::path::PathBuf::from(&path);
+
+    // 验证路径是否存在
+    if !path_obj.exists() {
+        return Err(format!("目录不存在: {}", path));
+    }
+
+    // 验证路径是否是目录
+    if !path_obj.is_dir() {
+        return Err(format!("路径不是目录: {}", path));
+    }
+
     let dir = WatchedDirectory {
         id: None,
-        path: request.path,
-        recursive: request.recursive,
-        filters: request.filters.map(|f| serde_json::to_value(f).unwrap()),
+        path: path.clone(),
+        recursive,
+        filters,
         enabled: true,
         created_at: chrono::Utc::now(),
         last_scanned_at: None,
     };
+
+    println!("[Rust] WatchedDirectory to create: {:?}", dir);
 
     state.create_watched_directory(&dir).map_err(|e: crate::error::AppError| e.to_string())
 }
@@ -72,6 +90,7 @@ pub fn scan_directory(
             added_files: 0,
             updated_files: 0,
             skipped_files: 0,
+            deleted_files: 0,
             errors: vec![ScanError {
                 path: path.clone(),
                 message: "目录不存在".to_string(),
@@ -86,6 +105,7 @@ pub fn scan_directory(
             added_files: 0,
             updated_files: 0,
             skipped_files: 0,
+            deleted_files: 0,
             errors: vec![ScanError {
                 path: path.clone(),
                 message: "不是目录".to_string(),
@@ -132,6 +152,7 @@ pub fn scan_all_directories(
             added_files: 0,
             updated_files: 0,
             skipped_files: 0,
+            deleted_files: 0,
             errors: vec![],
         });
     }
@@ -170,6 +191,7 @@ pub fn scan_all_directories(
         total_result.added_files += result.added_files;
         total_result.updated_files += result.updated_files;
         total_result.skipped_files += result.skipped_files;
+        total_result.deleted_files += result.deleted_files;
 
         // 更新目录扫描时间
         if let Some(id) = dir.id {
@@ -204,6 +226,8 @@ pub struct BatchScanResult {
     pub updated_files: usize,
     /// 跳过文件数
     pub skipped_files: usize,
+    /// 删除文件数
+    pub deleted_files: usize,
     /// 错误列表
     pub errors: Vec<BatchScanError>,
 }
@@ -217,6 +241,7 @@ impl BatchScanResult {
             added_files: 0,
             updated_files: 0,
             skipped_files: 0,
+            deleted_files: 0,
             errors: vec![],
         }
     }

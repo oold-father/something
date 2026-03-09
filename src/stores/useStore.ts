@@ -23,8 +23,6 @@ export interface AppSettings {
 }
 
 interface AppState {
-
-interface AppState {
   // 文件列表
   files: File[];
   setFiles: (files: File[]) => void;
@@ -74,11 +72,13 @@ interface AppState {
   // 主题
   theme: 'light' | 'dark';
   setTheme: (theme: 'light' | 'dark') => void;
+
+  // 文件列表修订号（用于触发刷新）
+  filesRevision: number;
+  incrementFilesRevision: () => void;
 }
 
-export const useStore = create<AppState>((set, get) => ({
-  files: [],
-  setFiles: (files) => set({ files }),
+export const useStore = create<AppState>((set) => ({
   files: [],
   setFiles: (files) => set({ files }),
 
@@ -117,7 +117,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   notifications: [],
   addNotification: (notification) => {
-    const id = Math.random().toString(36).substr(2, 9);
+    const id: string = Math.random().toString(36).substr(2, 9);
     const newNotification: Notification = {
       id,
       timestamp: Date.now(),
@@ -165,6 +165,9 @@ export const useStore = create<AppState>((set, get) => ({
     // 保存到 localStorage
     localStorage.setItem('something_theme', theme);
   },
+
+  filesRevision: 0,
+  incrementFilesRevision: () => set((state) => ({ filesRevision: state.filesRevision + 1 })),
 }));
 
 // 初始化主题

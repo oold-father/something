@@ -13,9 +13,6 @@ pub fn run() {
     // 初始化数据库
     let db = Database::new().expect("Failed to initialize database");
 
-    // 初始化默认标签
-    db.init_default_tags().expect("Failed to initialize default tags");
-
     // 注册 Tauri 命令并获取 Builder
     let builder = commands::register_commands(db);
 

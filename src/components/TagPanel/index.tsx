@@ -7,12 +7,16 @@ import { api } from '../../lib/api';
 import { useStore } from '../../stores/useStore';
 import type { Tag as TagType } from '../../types/api';
 
+console.log('[TagPanel] Component loaded');
+
 export default function TagPanel() {
   const tags = useStore((s) => s.tags);
+  console.log('[TagPanel] Render called, tags:', tags);
   const setTags = useStore((s) => s.setTags);
   const selectedTags = useStore((s) => s.selectedTags);
   const toggleTag = useStore((s) => s.toggleTag);
   const addNotification = useStore((s) => s.addNotification);
+  const incrementFilesRevision = useStore((s) => s.incrementFilesRevision);
 
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -30,9 +34,11 @@ export default function TagPanel() {
   const loadTags = async () => {
     try {
       const data = await api.getAllTags();
+      console.log('Loaded tags:', data);
       setTags(data);
     } catch (error) {
       console.error('加载标签失败:', error);
+      addNotification({ type: 'error', message: '加载标签失败，请检查控制台' });
     }
   };
 
@@ -42,13 +48,19 @@ export default function TagPanel() {
       return;
     }
 
+    const tagRequest = {
+      name: newTagName.trim(),
+      displayName: newTagDisplayName.trim() || newTagName.trim(),
+      color: newTagColor,
+    };
+    console.log('=== Creating tag request ===:', JSON.stringify(tagRequest));
+
     setIsSubmitting(true);
     try {
-      await api.createTag({
-        name: newTagName.trim(),
-        displayName: newTagDisplayName.trim() || newTagName.trim(),
-        color: newTagColor,
-      });
+      console.log('Calling api.createTag...');
+      const result = await api.createTag(tagRequest);
+      console.log('createTag result:', result);
+
       await loadTags();
       setShowAddDialog(false);
       setNewTagName('');
@@ -56,8 +68,12 @@ export default function TagPanel() {
       setNewTagColor('#3b82f6');
       addNotification({ type: 'success', message: '标签创建成功' });
     } catch (error) {
-      console.error('创建标签失败:', error);
-      addNotification({ type: 'error', message: '创建标签失败' });
+      console.error('=== 创建标签失败 ===');
+      console.error('Error object:', error);
+      console.error('Error message:', (error as Error).message);
+      console.error('Error stack:', (error as Error).stack);
+      console.error('Error as string:', String(error));
+      addNotification({ type: 'error', message: `创建标签失败: ${(error as Error).message || String(error)}` });
     } finally {
       setIsSubmitting(false);
     }
@@ -72,14 +88,16 @@ export default function TagPanel() {
 
     setIsSubmitting(true);
     try {
-      await api.updateTag(editingTag.id!, {
-        name: newTagName.trim(),
-        displayName: newTagDisplayName.trim() || newTagName.trim(),
-        color: newTagColor,
-      });
+      await api.updateTag(
+        editingTag.id!,
+        newTagDisplayName.trim() || newTagName.trim(),
+        newTagColor
+      );
       await loadTags();
       setShowEditDialog(false);
       setEditingTag(null);
+      // 触发文件列表刷新
+      incrementFilesRevision();
       addNotification({ type: 'success', message: '标签更新成功' });
     } catch (error) {
       console.error('更新标签失败:', error);
@@ -98,6 +116,8 @@ export default function TagPanel() {
       await loadTags();
       setShowDeleteDialog(false);
       setEditingTag(null);
+      // 触发文件列表刷新
+      incrementFilesRevision();
       addNotification({ type: 'success', message: '标签删除成功' });
     } catch (error) {
       console.error('删除标签失败:', error);

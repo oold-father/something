@@ -4,7 +4,7 @@ use serde_json::Value as JsonValue;
 
 /// 文件类型枚举
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "lowercase")]
 pub enum FileType {
     /// 图片文件
     Image,
@@ -92,6 +92,7 @@ impl FileStatus {
 
 /// 文件信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct File {
     pub id: Option<i64>,
     pub path: String,
@@ -105,11 +106,12 @@ pub struct File {
     pub status: FileStatus,
     pub indexed_at: DateTime<Utc>,
     pub metadata: Option<JsonValue>,
+    pub tags: Option<Vec<Tag>>,
 }
 
 /// 标签类型枚举
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "lowercase")]
 pub enum TagType {
     /// 系统自动生成的标签
     System,
@@ -136,6 +138,7 @@ impl TagType {
 
 /// 标签信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Tag {
     pub id: Option<i64>,
     pub name: String,
@@ -159,6 +162,7 @@ pub struct FileTag {
 
 /// 监控目录信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WatchedDirectory {
     pub id: Option<i64>,
     pub path: String,
@@ -190,6 +194,7 @@ pub struct SearchQuery {
     pub keywords: Vec<String>,
     pub operator: SearchOperator,
     pub file_type_filter: Option<FileType>,
+    pub tags: Option<Vec<String>>,
     pub limit: usize,
     pub offset: usize,
 }
@@ -233,6 +238,7 @@ pub struct SystemStats {
 
 /// 新建标签请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateTagRequest {
     pub name: String,
     pub display_name: String,

@@ -150,6 +150,27 @@ impl Database {
         Ok(files)
     }
 
+    /// 获取指定路径前缀的所有文件（用于检测已删除的文件）
+    pub fn get_files_by_path_prefix(&self, path_prefix: &str) -> Result<Vec<File>> {
+        let conn = self.conn.lock();
+
+        let mut stmt = conn.prepare(
+            "SELECT f.id, f.path, f.name, f.extension, f.size, f.file_type, f.created_at, f.modified_at, f.accessed_at, f.status, f.indexed_at, f.metadata
+             FROM files f
+             WHERE f.path LIKE ?1 || '%'
+             ORDER BY f.path"
+        )?;
+
+        let mut rows = stmt.query(params![path_prefix])?;
+        let mut files = Vec::new();
+
+        while let Some(row) = rows.next()? {
+            files.push(self.row_to_file(row)?);
+        }
+
+        Ok(files)
+    }
+
     /// 获取文件总数（预留功能）
     #[allow(dead_code)]
     pub fn get_file_count(&self) -> Result<i64> {
@@ -467,6 +488,30 @@ impl Database {
     pub fn delete_watched_directory(&self, id: i64) -> Result<()> {
         let conn = self.conn.lock();
 
+        // 先获取监控目录的路径
+        let dir_path: String = conn.query_row(
+            "SELECT path FROM watched_directories WHERE id = ?1",
+            params![id],
+            |row| row.get::<_, String>(0),
+        )?;
+
+        // 确保路径以路径分隔符结尾，以精确匹配子目录
+        let path_pattern = if !dir_path.ends_with('\\') && !dir_path.ends_with('/') {
+            format!("{}%", dir_path)
+        } else {
+            format!("{}%", dir_path)
+        };
+
+        // 删除该监控目录下的所有文件（file_tags 会通过外键自动清除）
+        let files_deleted = conn.execute(
+            "DELETE FROM files WHERE path LIKE ?1",
+            params![path_pattern],
+        )?;
+
+        println!("[DEBUG] delete_watched_directory: id={}, path={}, pattern={}, deleted_files={}",
+            id, dir_path, path_pattern, files_deleted);
+
+        // 然后删除该监控目录
         conn.execute("DELETE FROM watched_directories WHERE id = ?1", params![id])?;
 
         Ok(())

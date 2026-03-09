@@ -1,4 +1,4 @@
-use crate::db::{Database, Tag, CreateTagRequest, TagType};
+use crate::db::{Database, Tag, TagType};
 
 /// 获取所有标签
 #[tauri::command]
@@ -18,21 +18,37 @@ pub fn get_tags_by_file(
 /// 创建标签
 #[tauri::command]
 pub fn create_tag(
-    request: CreateTagRequest,
+    name: String,
+    display_name: String,
+    color: String,
+    #[allow(dead_code)] icon: Option<String>,
     state: tauri::State<Database>,
 ) -> std::result::Result<i64, String> {
+    println!("[Rust] create_tag called with: name={}, display_name={}, color={}", name, display_name, color);
+
     let tag = Tag {
         id: None,
-        name: request.name,
-        display_name: request.display_name,
+        name: name.clone(),
+        display_name: display_name.clone(),
         tag_type: TagType::Custom,
-        color: request.color,
-        icon: request.icon,
+        color: color.clone(),
+        icon: icon,
         use_count: 0,
         created_at: chrono::Utc::now(),
     };
 
-    state.create_tag(&tag).map_err(|e| e.to_string())
+    println!("[Rust] Tag to create: {:?}", tag);
+
+    match state.create_tag(&tag) {
+        Ok(id) => {
+            println!("[Rust] Tag created with id: {}", id);
+            Ok(id)
+        },
+        Err(e) => {
+            eprintln!("[Rust] Failed to create tag: {}", e);
+            Err(e.to_string())
+        },
+    }
 }
 
 /// 添加标签到文件

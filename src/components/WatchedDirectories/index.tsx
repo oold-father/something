@@ -2,11 +2,77 @@
  * 监控目录管理组件
  */
 import { useState, useEffect } from 'react';
-import { FolderOpen, FolderPlus, Trash2, RefreshCw, AlertCircle, Play, CheckCircle2 } from 'lucide-react';
+import { FolderOpen, FolderPlus, Trash2, RefreshCw, AlertCircle, Play, CheckCircle2, X } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useStore } from '../../stores/useStore';
 import { api } from '../../lib/api';
 import type { BatchScanResult } from '../../types/api';
+
+// 确认删除弹窗组件
+interface ConfirmDeleteDialogProps {
+  isOpen: boolean;
+  directoryPath: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+function ConfirmDeleteDialog({ isOpen, directoryPath, onConfirm, onCancel }: ConfirmDeleteDialogProps) {
+  return (
+    <div
+      className={`fixed inset-0 z-50 bg-black/50 flex items-center justify-center transition-opacity ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+      onClick={onCancel}
+    >
+      <div
+        className="bg-card dark:bg-gray-800 rounded-lg shadow-xl w-[400px]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 头部 */}
+        <div className="flex items-center justify-between p-6 border-b border-border">
+          <h3 className="text-lg font-semibold">确认移除</h3>
+          <button
+            onClick={onCancel}
+            className="p-1 hover:bg-muted rounded-full transition-colors"
+          >
+            <X className="w-5 h-5 text-muted-foreground" />
+          </button>
+        </div>
+
+        {/* 警告信息 */}
+        <div className="px-6 py-6">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 mt-0.5">
+              <AlertCircle size={20} className="text-orange-500" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm text-gray-700 dark:text-gray-300 mb-2">
+                确定要移除以下监控目录吗？
+              </p>
+              <p className="text-sm font-mono bg-gray-100 dark:bg-gray-700 px-3 py-2 rounded text-gray-900 dark:text-gray-100 truncate">
+                {directoryPath}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 底部按钮 */}
+        <div className="px-6 py-4 flex justify-end gap-3 border-t border-border">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-lg transition-colors"
+          >
+            取消
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-lg transition-colors"
+          >
+            确定
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // 导入 opener 插件用于打开文件夹
 const opener = import('@tauri-apps/plugin-opener') as any;
@@ -25,6 +91,8 @@ export default function WatchedDirectories() {
   const [scanResult, setScanResult] = useState<BatchScanResult | null>(null);
   const [showResultDialog, setShowResultDialog] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [directoryToDelete, setDirectoryToDelete] = useState<{ id: number; path: string } | null>(null);
 
   useEffect(() => {
     loadWatchedDirectories();
@@ -75,18 +143,31 @@ export default function WatchedDirectories() {
     }
   };
 
-  const handleRemoveDirectory = async (id: number, path: string) => {
-    if (!confirm(`确定要移除监控目录 "${path}" 吗？`)) {
-      return;
-    }
+  const handleRemoveDirectory = (id: number, path: string) => {
+    setDirectoryToDelete({ id, path });
+    setShowDeleteDialog(true);
+  };
+
+  const confirmRemoveDirectory = async () => {
+    if (!directoryToDelete) return;
 
     try {
-      await api.removeWatchedDirectory(id);
+      await api.removeWatchedDirectory(directoryToDelete.id);
       await loadWatchedDirectories();
+      await loadFiles(); // 刷新文件列表，移除已删除目录下的文件
+      addNotification({ type: 'success', message: '监控目录已移除，相关文件已清理' });
     } catch (err) {
       console.error('移除目录失败:', err);
       setError('移除目录失败');
+    } finally {
+      setShowDeleteDialog(false);
+      setDirectoryToDelete(null);
     }
+  };
+
+  const cancelRemoveDirectory = () => {
+    setShowDeleteDialog(false);
+    setDirectoryToDelete(null);
   };
 
   const handleToggleEnabled = async (id: number, enabled: boolean) => {
@@ -461,6 +542,14 @@ export default function WatchedDirectories() {
           </div>
         </div>
       )}
+
+      {/* 确认删除弹窗 */}
+      <ConfirmDeleteDialog
+        isOpen={showDeleteDialog}
+        directoryPath={directoryToDelete?.path || ''}
+        onConfirm={confirmRemoveDirectory}
+        onCancel={cancelRemoveDirectory}
+      />
     </div>
   );
 }

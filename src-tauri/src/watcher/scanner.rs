@@ -54,13 +54,45 @@ impl<'a> DirectoryScanner<'a> {
     pub fn scan(&self, path: &PathBuf) -> ScanResult {
         let mut result = ScanResult::new(path.clone());
 
-        self.scan_recursive(path, 0, &mut result);
+        // 获取该目录下已记录的所有文件
+        let path_str = path.to_string_lossy().to_string();
+        let existing_files = match self.db.get_files_by_path_prefix(&path_str) {
+            Ok(files) => files,
+            Err(e) => {
+                result.add_error(path.clone(), format!("查询现有文件失败: {}", e));
+                return result;
+            }
+        };
+
+        // 创建存在的文件路径集合，用于快速查找
+        let mut existing_paths = std::collections::HashSet::new();
+
+        self.scan_recursive(path, 0, &mut result, &mut existing_paths);
+
+        // 检测已删除的文件
+        for file in existing_files {
+            if !existing_paths.contains(&file.path) {
+                // 文件在数据库中记录但不在文件系统中，说明已被删除
+                if let Some(file_id) = file.id {
+                    match self.db.delete_file(file_id) {
+                        Ok(_) => {
+                            println!("[Scanner] 删除已不存在的文件: {} (id={})", file.path, file_id);
+                            result.deleted_files += 1;
+                        }
+                        Err(e) => {
+                            eprintln!("[Scanner] 删除文件记录失败: {} (id={}) - {}", file.path, file_id, e);
+                            result.add_error(PathBuf::from(&file.path), format!("删除文件记录失败: {}", e));
+                        }
+                    }
+                }
+            }
+        }
 
         result
     }
 
     /// 递归扫描目录
-    fn scan_recursive(&self, path: &PathBuf, depth: usize, result: &mut ScanResult) {
+    fn scan_recursive(&self, path: &PathBuf, depth: usize, result: &mut ScanResult, existing_paths: &mut std::collections::HashSet<String>) {
         // 检查深度限制
         if let Some(max_depth) = self.config.max_depth {
             if depth > max_depth {
@@ -95,17 +127,21 @@ impl<'a> DirectoryScanner<'a> {
 
             // 处理文件
             if entry_path.is_file() {
-                self.process_file(&entry_path, result);
+                self.process_file(&entry_path, result, existing_paths);
             } else if entry_path.is_dir() && self.config.recursive {
                 // 递归处理目录
-                self.scan_recursive(&entry_path, depth + 1, result);
+                self.scan_recursive(&entry_path, depth + 1, result, existing_paths);
             }
         }
     }
 
     /// 处理单个文件
-    fn process_file(&self, path: &PathBuf, result: &mut ScanResult) {
+    fn process_file(&self, path: &PathBuf, result: &mut ScanResult, existing_paths: &mut std::collections::HashSet<String>) {
         result.scanned_files += 1;
+
+        // 记录文件路径为已存在
+        let path_str = path.to_string_lossy().to_string();
+        existing_paths.insert(path_str.clone());
 
         // 检查扩展名过滤
         if let Some(ref extensions) = self.config.extensions {
@@ -130,7 +166,6 @@ impl<'a> DirectoryScanner<'a> {
             }
         };
 
-        let path_str = path.to_string_lossy().to_string();
         let name = path.file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
@@ -165,6 +200,7 @@ impl<'a> DirectoryScanner<'a> {
             status: FileStatus::Active,
             indexed_at: chrono::Utc::now(),
             metadata: None,
+            tags: None,
         };
 
         if existing_file.is_some() {
@@ -232,6 +268,9 @@ pub struct ScanResult {
     /// 跳过的文件数
     #[serde(rename = "skippedFiles")]
     pub skipped_files: usize,
+    /// 删除的文件数
+    #[serde(rename = "deletedFiles")]
+    pub deleted_files: usize,
     /// 错误列表
     pub errors: Vec<ScanError>,
 }
@@ -244,6 +283,7 @@ impl ScanResult {
             added_files: 0,
             updated_files: 0,
             skipped_files: 0,
+            deleted_files: 0,
             errors: Vec::new(),
         }
     }
@@ -272,11 +312,12 @@ impl std::fmt::Display for ScanResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "ScanResult: path={}, scanned={}, added={}, updated={}, errors={}",
+            "ScanResult: path={}, scanned={}, added={}, updated={}, deleted={}, errors={}",
             self.scan_path.display(),
             self.scanned_files,
             self.added_files,
             self.updated_files,
+            self.deleted_files,
             self.errors.len()
         )
     }

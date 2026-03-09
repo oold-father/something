@@ -13,6 +13,7 @@ export interface File {
   createdAt: string;
   modifiedAt: string;
   status: 'active' | 'deleted' | 'moved';
+  tags?: Tag[];
 }
 
 export interface FileWithTags extends File {
