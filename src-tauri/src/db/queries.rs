@@ -514,6 +514,9 @@ impl Database {
         // 然后删除该监控目录
         conn.execute("DELETE FROM watched_directories WHERE id = ?1", params![id])?;
 
+        // 重新计算标签使用计数（修复标签计数未更新的问题）
+        self.recalculate_tag_counts()?;
+
         Ok(())
     }
 
