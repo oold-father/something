@@ -131,8 +131,8 @@ export default function FileList() {
   const handleFileClick = async (file: FileType) => {
     try {
       // 使用 Tauri 的 shell API 打开文件所在目录
-      const { open } = await import('@tauri-apps/plugin-opener') as any;
-      open(file.path);
+      const { openPath } = await import('@tauri-apps/plugin-opener') as any;
+      openPath(file.path);
     } catch (error) {
       console.error('打开文件失败:', error);
     }
