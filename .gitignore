@@ -48,6 +48,9 @@ coverage/
 tarpaulin-report.html
 lcov.info
 
+# ===== Claude Code =====
+.claude/
+
 # ===== 操作系统 =====
 .DS_Store
 Thumbs.db
